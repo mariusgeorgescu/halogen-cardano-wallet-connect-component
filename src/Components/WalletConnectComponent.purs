@@ -34,7 +34,12 @@ type ButtonConfig
     }
 
 type Input
-  = { buttons :: Array ButtonConfig }
+  = { buttons :: Array ButtonConfig
+    , assets ::
+        { connectIcon :: String
+        , disconnectIcon :: String
+        }
+    }
 
 -- No outputs for now
 data Output
@@ -62,6 +67,7 @@ type State
     , connectedWalletInfo :: Maybe ConnectedWalletInfo
     , walletApi :: Maybe Api
     , customButtons :: Array ButtonConfig
+    , assets :: { connectIcon :: String, disconnectIcon :: String }
     }
 
 data Action
@@ -98,6 +104,7 @@ initialState i =
   , connectedWalletInfo: Nothing
   , walletApi: Nothing
   , customButtons: i.buttons
+  , assets: i.assets
   }
 
 handleQuery ::
@@ -149,7 +156,7 @@ handleAction = case _ of
     H.modify_ _ { walletApi = Nothing, connectedWalletInfo = Nothing }
     H.raise WalletDisconnectedEvent
   Receive i -> do
-    H.modify_ _ { customButtons = i.buttons }
+    H.modify_ _ { customButtons = i.buttons, assets = i.assets }
   ClickCustomButton bid -> do
     H.raise (CustomButtonEvent bid)
 
@@ -175,7 +182,7 @@ render s =
       [ HH.text "Connect"
       , HH.div
           [ HP.classes [ HH.ClassName "mask mask-hexagon  w-8" ] ]
-          [ HH.img [ HP.src "./images/walletsymbol.svg" ] ]
+          [ HH.img [ HP.src s.assets.connectIcon ] ]
       ]
     Just wallet ->
       [ HH.text "Connected"
@@ -213,7 +220,7 @@ render s =
             [ HH.a_
                 [ HH.div
                     [ HP.classes [ HH.ClassName "mask mask-hexagon  w-8" ] ]
-                    [ HH.img [ HP.src "./images/disconnectsymbol.svg" ] ]
+                    [ HH.img [ HP.src s.assets.disconnectIcon ] ]
                 , HH.text $ "Disconnect " <> wallet.connectedWalletName
                 ]
             ]
@@ -226,7 +233,7 @@ render s =
               , HH.p_
                   [ HH.div
                       [ HP.classes [ HH.ClassName "mask mask-hexagon  w-8" ] ]
-                      [ HH.img [ HP.src "./images/lace.png" ] ]
+                      [ HH.img [ HP.src s.assets.connectIcon ] ]
                   , renderLink "" "Try Lace" "http://www.lace.io"
                   ]
               ]

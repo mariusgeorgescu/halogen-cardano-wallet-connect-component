@@ -1,30 +1,17 @@
 package:
-  name: raffleize-frontend-purescript
+  name: halogen-wallet-connect-component
   dependencies:
-    - affjax
-    - affjax-web
-    - argonaut-aeson-generic
-    - b64
+    - arrays
     - cardano-serialization-lib
     - cip30
-    - cip30-typesafe
-    - console
     - effect
     - formatters
     - halogen
-    - halogen-formless
-    - halogen-store
-    - halogen-svg-elems
-    - js-date
-    - node-buffer
+    - maybe
+    - numbers
     - prelude
-    - profunctor-lenses
-    - remotedata
-    - stringutils
-    - web-cssom-view
-    - web-events
-    - web-storage
-    # - cardano-types
+    - strings
+    - tuples
 
 
   test:
@@ -45,9 +32,6 @@ workspace:
       git: https://github.com/mariusgeorgescu/purescript-cardano-serialization-lib.git
       ref: 7d6c664b125ce8c3cc441912fb8daf72294c17e7 # branch, tag, or commit hash
 
-    cip30-typesafe:
-      git: https://github.com/mariusgeorgescu/purescript-cip30-typesafe.git
-      ref: a8cf31f14663b2737387ed26090516362c69d0f3 # branch, tag, or commit hash
     cip30:
       git: https://github.com/mariusgeorgescu/purescript-cip30.git
       ref: fb4b90fcca1f57edaacd6405965bf245d3504583 # branch, tag, or commit hash
