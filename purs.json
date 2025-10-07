@@ -1,0 +1,10 @@
+{
+  "sources": [
+    "src/**/*.purs",
+    ".spago/*/*/src/**/*.purs"
+  ]
+}
+
+
+
+

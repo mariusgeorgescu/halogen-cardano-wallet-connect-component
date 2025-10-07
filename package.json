@@ -1,0 +1,38 @@
+{
+    "type": "module",
+    "engines": {
+        "node": "v23.10.0"
+    },
+    "dependencies": {
+        "@emurgo/cardano-serialization-lib-browser": "^11.5.0",
+        "@tailwindcss/vite": "^4.1.10",
+        "http-server": "^14.1.1",
+        "postcss-cli": "^11.0.1",
+        "purescript": "^0.15.15",
+        "purs-tidy": "^0.11.0",
+        "purty": "^7.0.0",
+        "spago": "^0.93.29",
+        "vite": "^6.2.0",
+        "vite-plugin-top-level-await": "^1.4.1",
+        "vite-plugin-wasm": "^3.3.0"
+    },
+    "devDependencies": {
+        "@tailwindcss/postcss": "^4.1.10",
+        "autoprefixer": "^10.4.21",
+        "copyfiles": "^2.4.1",
+        "daisyui": "^5.0.43",
+        "postcss": "^8.5.3",
+        "tailwindcss": "^4.1.10"
+    },
+    "scripts": {
+        "build:spago": "spago bundle --bundle-type module --platform browser --outfile public/index.js",
+        "build:css": "postcss src/style.css -o ./public/output.css",
+        "copy-images": "copyfiles -u 1 \"images/walletsymbol.svg\" \"images/home-symbol.svg\" \"images/disconnectsymbol.svg\" \"images/createsymbol.svg\" \"images/E7D/PNG Logo Files/Original Logo.png\" \"images/E7D/PNG Logo Files/Transparent Logo.png\" \"images/E7D/SVG Vector Files/Transparent Logo.svg\" \"images/E7D/Favicon/Favicon Original.ico\" \"images/E7D/Favicon/Wordpress.png\" \"images/E7D/Favicon/Wordpress Transparent.png\" dist/images/",
+        "build": "npm run build:spago && npm run build:css && npx vite build && npm run copy-images",
+        "serve": "npm run build && npx vite serve ",
+        "start": "http-server ./dist -p $PORT"
+    },
+    "browser": {
+        "child_process": false
+    }
+}

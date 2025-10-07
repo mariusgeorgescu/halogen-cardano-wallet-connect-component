@@ -1,0 +1,53 @@
+package:
+  name: raffleize-frontend-purescript
+  dependencies:
+    - affjax
+    - affjax-web
+    - argonaut-aeson-generic
+    - b64
+    - cardano-serialization-lib
+    - cip30
+    - cip30-typesafe
+    - console
+    - effect
+    - formatters
+    - halogen
+    - halogen-formless
+    - halogen-store
+    - halogen-svg-elems
+    - js-date
+    - node-buffer
+    - prelude
+    - profunctor-lenses
+    - remotedata
+    - stringutils
+    - web-cssom-view
+    - web-events
+    - web-storage
+    # - cardano-types
+
+
+  test:
+    main: Test.Main
+    dependencies: []
+  bundle:
+    extraArgs:
+      - "--external:@emurgo/cardano-serialization-lib-browser"
+workspace:
+  packageSet:
+    registry: 55.0.0
+  extraPackages:
+    # cardano-types:
+    #   git: https://github.com/mariusgeorgescu/purescript-cardano-types.git
+    #   ref: aa3df3f5a5c8863e4da11cfab0e028f25ae397e6 # branch, tag, or commit hash
+
+    cardano-serialization-lib:
+      git: https://github.com/mariusgeorgescu/purescript-cardano-serialization-lib.git
+      ref: 7d6c664b125ce8c3cc441912fb8daf72294c17e7 # branch, tag, or commit hash
+
+    cip30-typesafe:
+      git: https://github.com/mariusgeorgescu/purescript-cip30-typesafe.git
+      ref: a8cf31f14663b2737387ed26090516362c69d0f3 # branch, tag, or commit hash
+    cip30:
+      git: https://github.com/mariusgeorgescu/purescript-cip30.git
+      ref: fb4b90fcca1f57edaacd6405965bf245d3504583 # branch, tag, or commit hash
