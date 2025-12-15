@@ -53,6 +53,7 @@ data Query a
   | GetWalletApi (Maybe Api -> a)
   | GetConnectedWalletInfo (Maybe ConnectedWalletInfo -> a)
   | GetAvailableWalletExtensions (Array (Tuple String String) -> a)
+  | DisconnectWalletQuery a
 
 type ConnectedWalletInfo
   = { connectedWalletName :: String
@@ -126,6 +127,9 @@ handleQuery = case _ of
   GetAvailableWalletExtensions k -> do
     ws <- H.gets _.availableWalletExtensions
     pure $ Just (k ws)
+  DisconnectWalletQuery next -> do
+    handleAction DisconnectWallet
+    pure (Just next)
 
 handleAction ::
   forall m.
