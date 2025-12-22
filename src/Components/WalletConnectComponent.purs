@@ -143,7 +143,6 @@ handleAction = case _ of
     name <- getName wname
     icon <- getIcon wname
     adaBalance <- getNativeCoinBalanceString api
-    userAddresses <- getUserAddresses api
     firstAddrBech32 <- getUserFirstAddressBech32 api
     let
       cw =
@@ -215,7 +214,7 @@ render s =
             , HH.div
                 [ HP.classes [ HH.ClassName "flex items-center gap-2" ] ]
                 [ HH.span [ HP.classes [ HH.ClassName "font-bold" ] ] [ HH.text "Balance:" ]
-                , HH.span_ [ HH.text (formatNumberFromStr wallet.connectedWalletNativeCoinBalance) ]
+                , HH.span_ [ HH.text $ (formatNumberFromStr wallet.connectedWalletNativeCoinBalance) <> " ₳" ]
                 ]
             ]
         , renderDevider "neutral"
