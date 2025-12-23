@@ -1,9 +1,9 @@
 module WalletConnect.Component
   ( module Components.WalletConnectComponent
-  , module Capabilities.MonadCIP30
+  , module Cardano.Capabilities.Wallet.MonadCIP30
   ) where
 
 import Components.WalletConnectComponent
-import Capabilities.MonadCIP30
+import Cardano.Capabilities.Wallet.MonadCIP30
 
 

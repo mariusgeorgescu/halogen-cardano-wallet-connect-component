@@ -1,6 +1,6 @@
 {
     "name": "halogen-wallet-connect-component",
-    "version": "1.0.2",
+    "version": "1.1.0",
     "description": "A reusable Halogen component for Cardano wallet connection with CIP-30 support",
     "type": "module",
     "main": "src/WalletConnect/Component.purs",

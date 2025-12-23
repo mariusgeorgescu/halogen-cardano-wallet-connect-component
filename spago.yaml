@@ -2,6 +2,7 @@ package:
   name: halogen-wallet-connect-component
   dependencies:
     - arrays
+    - cardano-capabilities
     - cardano-serialization-lib
     - cip30
     - effect
@@ -35,3 +36,7 @@ workspace:
     cip30:
       git: https://github.com/mariusgeorgescu/purescript-cip30.git
       ref: fb4b90fcca1f57edaacd6405965bf245d3504583 # branch, tag, or commit hash
+
+    cardano-capabilities:
+      git: https://github.com/mariusgeorgescu/purescript-cardano-capabilities.git
+      ref: main # branch, tag, or commit hash

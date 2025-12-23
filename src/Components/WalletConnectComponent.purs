@@ -1,7 +1,16 @@
 module Components.WalletConnectComponent where
 
 import Prelude
-import Capabilities.MonadCIP30
+import Cardano.Capabilities.Wallet.MonadCIP30
+  ( class MonadCIP30
+  , enableWallet
+  , getNetworkName
+  , getName
+  , getIcon
+  , getNativeCoinBalanceString
+  , getUserFirstAddressBech32
+  , getTheAvailableWallets
+  )
 import Cardano.Wallet.Cip30 (Api)
 import Components.HTML.RenderUtils (renderDevider, renderLink)
 import Csl as Csl
