@@ -338,6 +338,11 @@ MIT License - see [LICENSE](./LICENSE) file for details.
 
 See [CHANGELOG.md](./CHANGELOG.md) for detailed version history.
 
+### v1.1.1
+- Removed redundant `WalletConnect/Component.purs` re-export module
+- Fixed file structure: moved `HTML/RenderUtils.purs` to `Components/HTML/RenderUtils.purs`
+- Removed unused `trimQuotes` function
+
 ### v1.1.0
 - **BREAKING**: Replaced local `Capabilities.MonadCIP30` with external `purescript-cardano-capabilities` library
 - Updated imports to use `Cardano.Capabilities.Wallet.MonadCIP30`
