@@ -16,8 +16,5 @@ shortString i s =
     else
       s
 
-trimQuotes :: String -> String
-trimQuotes s = drop 1 $ take (length s - 1) s
-
 formatNumberFromStr ∷ String → String
 formatNumberFromStr str = formatOrShowNumber "0,0" $ maybe 0.0 identity $ Number.fromString $ str

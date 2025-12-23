@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.1] - 2024-12-19
+
+### Changed
+- Fixed file path structure: moved `HTML/RenderUtils.purs` to `Components/HTML/RenderUtils.purs` to match module name
+- Updated package.json main entry point to point directly to `Components/WalletConnectComponent.purs`
+
+### Removed
+- Removed redundant `WalletConnect/Component.purs` re-export module
+- Removed unused `trimQuotes` function from `Utils.purs`
+
 ## [1.1.0] - 2024-12-19
 
 ### Changed

@@ -4,17 +4,16 @@ import Prelude
 import Cardano.Capabilities.Wallet.MonadCIP30
   ( class MonadCIP30
   , enableWallet
-  , getNetworkName
   , getName
   , getIcon
+  , getNetworkName
   , getNativeCoinBalanceString
   , getUserFirstAddressBech32
   , getTheAvailableWallets
   )
 import Cardano.Wallet.Cip30 (Api)
 import Components.HTML.RenderUtils (renderDevider, renderLink)
-import Csl as Csl
-import Data.Array ((!!), null)
+import Data.Array (null)
 import Data.Maybe (Maybe(..), isJust)
 import Data.Tuple (Tuple, fst, snd)
 import Effect.Aff.Class (class MonadAff)

@@ -54,12 +54,6 @@ import Components.WalletConnectComponent as WC
 import Cardano.Capabilities.Wallet.MonadCIP30 (class MonadCIP30)
 ```
 
-Or use the re-exported module:
-
-```purescript
-import WalletConnect.Component as WC
-```
-
 ### 2. Implement MonadCIP30 in Your App Monad
 
 The component requires your app monad to implement `MonadCIP30` from the `purescript-cardano-capabilities` library. If you're using `HalogenM`, you can leverage the built-in instance provided by that library:
