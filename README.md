@@ -26,6 +26,9 @@ workspace:
     cip30:
       git: https://github.com/mariusgeorgescu/purescript-cip30.git
       ref: fb4b90fcca1f57edaacd6405965bf245d3504583
+    cardano-capabilities:
+      git: https://github.com/mariusgeorgescu/purescript-cardano-capabilities.git
+      ref: main
     halogen-wallet-connect-component:
       git: https://github.com/your-username/halogen-wallet-connect-component.git
       ref: main
@@ -48,7 +51,7 @@ spago install
 
 ```purescript
 import Components.WalletConnectComponent as WC
-import Capabilities.MonadCIP30 (class MonadCIP30)
+import Cardano.Capabilities.Wallet.MonadCIP30 (class MonadCIP30)
 ```
 
 Or use the re-exported module:
@@ -59,13 +62,13 @@ import WalletConnect.Component as WC
 
 ### 2. Implement MonadCIP30 in Your App Monad
 
-The component requires your app monad to implement `MonadCIP30`. If you're using `HalogenM`, you can leverage the built-in instance:
+The component requires your app monad to implement `MonadCIP30` from the `purescript-cardano-capabilities` library. If you're using `HalogenM`, you can leverage the built-in instance provided by that library:
 
 ```purescript
-import Capabilities.MonadCIP30 (class MonadCIP30)
+import Cardano.Capabilities.Wallet.MonadCIP30 (class MonadCIP30)
 import Halogen as H
 
--- If using HalogenM, the instance is already provided
+-- If using HalogenM, the instance is already provided by purescript-cardano-capabilities
 -- For custom monads, implement the full interface:
 instance monadCip30MyApp :: MonadCIP30 MyAppM where
   enable w exts = liftAff $ Cip30.enable w exts
@@ -243,7 +246,7 @@ The component requires your app monad to implement `MonadCIP30`. This provides a
 - `isEnabled` - Check if wallet is currently enabled
 
 ### Helper Functions
-The library provides convenient helper functions in `Capabilities.MonadCIP30`:
+The `purescript-cardano-capabilities` library provides convenient helper functions in `Cardano.Capabilities.Wallet.MonadCIP30`:
 - `enableWallet` - Enable wallet with default CIP-30 extensions `[{ cip: 30 }]`
 - `getTheAvailableWallets` - Get wallets with icons as `Array (Tuple WalletName String)`
 - `getNetworkName` - Get human-readable network name ("Mainnet", "Preview", "Preprod", "Unknown")
@@ -322,6 +325,7 @@ rm -rf output .spago
 
 This library depends on:
 - `halogen` - UI framework
+- `cardano-capabilities` - Cardano capability type classes (provides `MonadCIP30`)
 - `cip30` - CIP-30 wallet interface bindings
 - `cardano-serialization-lib` - Cardano serialization library
 - Standard PureScript packages (arrays, effect, maybe, prelude, etc.)
@@ -339,6 +343,14 @@ MIT License - see [LICENSE](./LICENSE) file for details.
 ## Changelog
 
 See [CHANGELOG.md](./CHANGELOG.md) for detailed version history.
+
+### v1.1.0
+- **BREAKING**: Replaced local `Capabilities.MonadCIP30` with external `purescript-cardano-capabilities` library
+- Updated imports to use `Cardano.Capabilities.Wallet.MonadCIP30`
+- Added `cardano-capabilities` dependency
+
+### v1.0.2
+- Updated README with accurate documentation
 
 ### v1.0.1
 - Added `DisconnectWalletQuery` query for programmatic wallet disconnection
