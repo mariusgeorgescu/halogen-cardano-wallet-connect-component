@@ -1,47 +1,48 @@
 {
-    "name": "halogen-wallet-connect-component",
-    "version": "1.1.1",
-    "description": "A reusable Halogen component for Cardano wallet connection with CIP-30 support",
-    "type": "module",
-    "main": "src/Components/WalletConnectComponent.purs",
-    "repository": {
-        "type": "git",
-        "url": "git+https://github.com/mariusgeorgescu/halogen-cardano-wallet-connect-component.git"
-    },
-    "keywords": [
-        "purescript",
-        "halogen",
-        "cardano",
-        "wallet",
-        "cip30",
-        "blockchain",
-        "component"
-    ],
-    "author": "Marius Georgescu",
-    "license": "MIT",
-    "engines": {
-        "node": ">=18.0.0"
-    },
-    "peerDependencies": {
-        "purescript": "^0.15.0",
-        "spago": "^0.93.0"
-    },
-    "devDependencies": {
-        "@emurgo/cardano-serialization-lib-browser": "^11.5.0",
-        "purescript": "^0.15.15",
-        "purs-tidy": "^0.11.0",
-        "spago": "^0.93.29"
-    },
-    "scripts": {
-        "build": "spago build",
-        "test": "spago test",
-        "clean": "rm -rf output .spago",
-        "format": "purs-tidy format-in-place src/**/*.purs"
-    },
-    "files": [
-        "src/",
-        "spago.yaml",
-        "spago.lock",
-        "README.md"
-    ]
+  "name": "halogen-wallet-connect-component",
+  "version": "1.1.1",
+  "description": "A reusable Halogen component for Cardano wallet connection with CIP-30 support",
+  "type": "module",
+  "main": "src/Components/WalletConnectComponent.purs",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/mariusgeorgescu/halogen-cardano-wallet-connect-component.git"
+  },
+  "keywords": [
+    "purescript",
+    "halogen",
+    "cardano",
+    "wallet",
+    "cip30",
+    "blockchain",
+    "component"
+  ],
+  "author": "Marius Georgescu",
+  "license": "MIT",
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "peerDependencies": {
+    "purescript": "^0.15.0",
+    "spago": "^0.93.0"
+  },
+  "devDependencies": {
+    "@emurgo/cardano-serialization-lib-browser": "^11.5.0",
+    "purescript": "^0.15.15",
+    "purs-tidy": "^0.11.0",
+    "spago": "^0.93.29"
+  },
+  "scripts": {
+    "build": "spago build",
+    "test": "spago test",
+    "clean": "rm -rf output .spago",
+    "format": "purs-tidy format-in-place src/**/*.purs",
+    "check-formatting": "purs-tidy check src/**/*.purs"
+  },
+  "files": [
+    "src/",
+    "spago.yaml",
+    "spago.lock",
+    "README.md"
+  ]
 }

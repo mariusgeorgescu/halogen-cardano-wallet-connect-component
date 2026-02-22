@@ -1,0 +1,44 @@
+---
+description: Halogen project build tooling and workflow
+alwaysApply: true
+---
+
+# Project Tooling
+
+## Build System
+
+- **Spago** for package management and builds (`spago.dhall`, `packages.dhall`)
+- Build: `spago build` or `npm run build` (includes `--censor-lib --strict`)
+- Test: `spago -x test/test.dhall test`
+
+## Code Formatting
+
+- **purs-tidy** for formatting: `npm run format` (format in place), `npm run check-formatting` (CI check)
+- 2-space indentation, no trailing whitespace, final newline
+
+## PureScript Language
+
+- This project uses PureScript (not Haskell or TypeScript)
+- File extension: `.purs`
+- Module names must match file paths (e.g., `Halogen.HTML.Core` → `src/Halogen/HTML/Core.purs`)
+- No FFI in this library except `foreign import data Any :: Type` in `Halogen.Data.Slot`
+
+## Key Dependencies
+
+- `halogen-vdom` — virtual DOM implementation
+- `halogen-subscriptions` — event subscription system
+- `aff` — async effect monad
+- `free` — free monads (used for `HalogenM` / `HalogenF`)
+- `dom-indexed` — type-safe DOM property indices
+
+## Running Examples
+
+- Individual: `npm run example-<name>` (e.g., `npm run example-basic`)
+- All: `npm run example-all`
+- Examples live in `examples/<name>/` with their own `spago.dhall`
+
+## Testing
+
+- Tests in `test/` directory
+- Test driver in `Test.TestDriver` for non-DOM testing
+- Doc examples compiled as tests to ensure they remain valid

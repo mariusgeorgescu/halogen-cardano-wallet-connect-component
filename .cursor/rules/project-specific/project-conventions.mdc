@@ -1,0 +1,11 @@
+---
+description: Project conventions for halogen-cardano-wallet-connect-component
+globs: "**/*.purs"
+alwaysApply: false
+---
+
+# Project Conventions
+
+Uses **spago.yaml**. Build/test/format as in package.json.
+
+Single component; slot proxy follows underscore prefix: `_walletConnect`. Requires MonadCIP30, MonadAff.

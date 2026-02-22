@@ -1,3 +1,5 @@
+-- | Halogen component for Cardano wallet connection via CIP-30.
+-- | Exposes Slot, Query, Output, Input, and component; parent uses _walletConnect proxy.
 module Components.WalletConnectComponent where
 
 import Prelude
@@ -28,34 +30,37 @@ import Utils (formatNumberFromStr, shortString)
 --------------------------------------------------------------------------------
 -- Component Interface
 --------------------------------------------------------------------------------
-type Slot
-  = H.Slot Query Output Unit
+-- | Slot type for the wallet connect component.
+type Slot = H.Slot Query Output Unit
 
-walletConnectProxy = Proxy :: Proxy "walletConnectComponent"
+-- | Proxy for the wallet connect slot label (use with HH.slot).
+_walletConnect :: Proxy "walletConnectComponent"
+_walletConnect = Proxy
 
--- Customizable input: array of buttons to render
-type ButtonConfig
-  = { id :: String
-    , label :: String
-    , iconSrc :: String
-    , classes :: Array String
-    }
+-- | Customizable input: array of buttons to render.
+type ButtonConfig =
+  { id :: String
+  , label :: String
+  , iconSrc :: String
+  , classes :: Array String
+  }
 
-type Input
-  = { buttons :: Array ButtonConfig
-    , assets ::
-        { connectIcon :: String
-        , disconnectIcon :: String
-        }
-    }
+-- | Input: custom buttons and asset URLs for connect/disconnect icons.
+type Input =
+  { buttons :: Array ButtonConfig
+  , assets ::
+      { connectIcon :: String
+      , disconnectIcon :: String
+      }
+  }
 
--- No outputs for now
+-- | Output messages raised to the parent.
 data Output
   = WalletConnectedEvent
   | WalletDisconnectedEvent
-  | CustomButtonEvent String -- emits the button id
+  | CustomButtonEvent String
 
--- Public queries to update/query walletApi and state
+-- | Public queries to update/query walletApi and state.
 data Query a
   = SetWalletApi (Maybe Api) a
   | GetWalletApi (Maybe Api -> a)
@@ -63,33 +68,37 @@ data Query a
   | GetAvailableWalletExtensions (Array (Tuple String String) -> a)
   | DisconnectWalletQuery a
 
-type ConnectedWalletInfo
-  = { connectedWalletName :: String
-    , connectedWalletIcon :: String
-    , connectedWalletNetwork :: String
-    , connectedWalletAddress :: String
-    , connectedWalletNativeCoinBalance :: String
-    }
+-- | Connected wallet display info.
+type ConnectedWalletInfo =
+  { connectedWalletName :: String
+  , connectedWalletIcon :: String
+  , connectedWalletNetwork :: String
+  , connectedWalletAddress :: String
+  , connectedWalletNativeCoinBalance :: String
+  }
 
-type State
-  = { availableWalletExtensions :: Array (Tuple String String)
-    , connectedWalletInfo :: Maybe ConnectedWalletInfo
-    , walletApi :: Maybe Api
-    , customButtons :: Array ButtonConfig
-    , assets :: { connectIcon :: String, disconnectIcon :: String }
-    }
+-- | Component state (internal).
+type State =
+  { availableWalletExtensions :: Array (Tuple String String)
+  , connectedWalletInfo :: Maybe ConnectedWalletInfo
+  , walletApi :: Maybe Api
+  , customButtons :: Array ButtonConfig
+  , assets :: { connectIcon :: String, disconnectIcon :: String }
+  }
 
+-- | Internal actions.
 data Action
   = ConnectWallet String
   | DisconnectWallet
   | Receive Input
   | ClickCustomButton String
 
-component ::
-  forall m.
-  MonadAff m =>
-  MonadCIP30 m =>
-  H.Component Query Input Output m
+-- | Wallet connect Halogen component. Requires MonadAff and MonadCIP30.
+component
+  :: forall m
+   . MonadAff m
+  => MonadCIP30 m
+  => H.Component Query Input Output m
 component =
   H.mkComponent
     { initialState
@@ -107,6 +116,7 @@ component =
 --------------------------------------------------------------------------------
 -- Evaluation
 --------------------------------------------------------------------------------
+-- | Build initial state from Input.
 initialState :: Input -> State
 initialState i =
   { availableWalletExtensions: []
@@ -116,11 +126,13 @@ initialState i =
   , assets: i.assets
   }
 
-handleQuery ::
-  forall m a.
-  MonadAff m =>
-  MonadCIP30 m =>
-  Query a -> H.HalogenM State Action () Output m (Maybe a)
+-- | Handle parent queries (SetWalletApi, GetWalletApi, etc.).
+handleQuery
+  :: forall m a
+   . MonadAff m
+  => MonadCIP30 m
+  => Query a
+  -> H.HalogenM State Action () Output m (Maybe a)
 handleQuery = case _ of
   SetWalletApi api next -> do
     ws <- getTheAvailableWallets
@@ -139,11 +151,13 @@ handleQuery = case _ of
     handleAction DisconnectWallet
     pure (Just next)
 
-handleAction ::
-  forall m.
-  MonadAff m =>
-  MonadCIP30 m =>
-  Action -> H.HalogenM State Action () Output m Unit
+-- | Handle internal actions.
+handleAction
+  :: forall m
+   . MonadAff m
+  => MonadCIP30 m
+  => Action
+  -> H.HalogenM State Action () Output m Unit
 handleAction = case _ of
   ConnectWallet wname -> do
     api <- enableWallet wname
@@ -172,8 +186,9 @@ handleAction = case _ of
     H.raise (CustomButtonEvent bid)
 
 --------------------------------------------------------------------------------
--- Render (minimal placeholder)
+-- Render
 --------------------------------------------------------------------------------
+-- | Render the wallet connect dropdown UI.
 render :: forall m. State -> H.ComponentHTML Action () m
 render s =
   HH.div [ HP.classes [ HH.ClassName "flex justify-end", HH.ClassName "dropdown dropdown-hover dropdown-bottom dropdown-end" ] ]

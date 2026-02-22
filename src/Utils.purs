@@ -1,3 +1,4 @@
+-- | Utility functions used by the wallet connect component.
 module Utils where
 
 import Prelude
@@ -6,6 +7,7 @@ import Data.Maybe (maybe)
 import Data.Number as Number
 import Data.String (drop, length, take)
 
+-- | Truncate string to first and last n chars with "..." in the middle.
 shortString :: Int -> String -> String
 shortString i s =
   let
@@ -16,5 +18,6 @@ shortString i s =
     else
       s
 
-formatNumberFromStr ∷ String → String
+-- | Format a numeric string for display (e.g. balance).
+formatNumberFromStr :: String -> String
 formatNumberFromStr str = formatOrShowNumber "0,0" $ maybe 0.0 identity $ Number.fromString $ str
