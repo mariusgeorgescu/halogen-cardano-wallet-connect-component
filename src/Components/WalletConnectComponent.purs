@@ -1,4 +1,6 @@
 -- | Halogen component for Cardano wallet connection via CIP-30.
+-- | Supports two render modes: Standalone (default) and Unified (combined
+-- | profile selector + wallet info in a single avatar dropdown).
 -- | Exposes Slot, Query, Output, Input, and component; parent uses _walletConnect proxy.
 module Components.WalletConnectComponent where
 
@@ -31,34 +33,61 @@ import Utils (formatNumberFromStr, shortString)
 -- Component Interface
 --------------------------------------------------------------------------------
 -- | Slot type for the wallet connect component.
-type Slot = H.Slot Query Output Unit
+type Slot
+  = H.Slot Query Output Unit
 
 -- | Proxy for the wallet connect slot label (use with HH.slot).
 _walletConnect :: Proxy "walletConnectComponent"
 _walletConnect = Proxy
 
 -- | Customizable input: array of buttons to render.
-type ButtonConfig =
-  { id :: String
-  , label :: String
-  , iconSrc :: String
-  , classes :: Array String
-  }
+type ButtonConfig
+  = { id :: String
+    , label :: String
+    , iconSrc :: String
+    , classes :: Array String
+    }
 
--- | Input: custom buttons and asset URLs for connect/disconnect icons.
-type Input =
-  { buttons :: Array ButtonConfig
-  , assets ::
-      { connectIcon :: String
-      , disconnectIcon :: String
-      }
-  }
+-- | Generic profile info for unified mode (no domain dependency).
+type ProfileInfo
+  = { id :: String
+    , name :: String
+    , subtitle :: String
+    , thumbnailUri :: String
+    }
+
+-- | Render mode: Standalone (current default) or Unified (combined identity button).
+data RenderMode
+  = Standalone
+  | Unified UnifiedConfig
+
+-- | Configuration for unified render mode.
+type UnifiedConfig
+  = { profiles :: Array ProfileInfo
+    , activeProfile :: Maybe ProfileInfo
+    , actions :: Array ButtonConfig
+    , pendingCount :: Int
+    , createProfileLabel :: String
+    }
+
+-- | Input: custom buttons, asset URLs, and render mode.
+type Input
+  = { buttons :: Array ButtonConfig
+    , assets ::
+        { connectIcon :: String
+        , disconnectIcon :: String
+        }
+    , renderMode :: RenderMode
+    }
 
 -- | Output messages raised to the parent.
 data Output
   = WalletConnectedEvent
   | WalletDisconnectedEvent
   | CustomButtonEvent String
+  | ProfileSelectedEvent String
+  | ActionItemEvent String
+  | CreateProfileEvent
 
 -- | Public queries to update/query walletApi and state.
 data Query a
@@ -69,22 +98,23 @@ data Query a
   | DisconnectWalletQuery a
 
 -- | Connected wallet display info.
-type ConnectedWalletInfo =
-  { connectedWalletName :: String
-  , connectedWalletIcon :: String
-  , connectedWalletNetwork :: String
-  , connectedWalletAddress :: String
-  , connectedWalletNativeCoinBalance :: String
-  }
+type ConnectedWalletInfo
+  = { connectedWalletName :: String
+    , connectedWalletIcon :: String
+    , connectedWalletNetwork :: String
+    , connectedWalletAddress :: String
+    , connectedWalletNativeCoinBalance :: String
+    }
 
 -- | Component state (internal).
-type State =
-  { availableWalletExtensions :: Array (Tuple String String)
-  , connectedWalletInfo :: Maybe ConnectedWalletInfo
-  , walletApi :: Maybe Api
-  , customButtons :: Array ButtonConfig
-  , assets :: { connectIcon :: String, disconnectIcon :: String }
-  }
+type State
+  = { availableWalletExtensions :: Array (Tuple String String)
+    , connectedWalletInfo :: Maybe ConnectedWalletInfo
+    , walletApi :: Maybe Api
+    , customButtons :: Array ButtonConfig
+    , assets :: { connectIcon :: String, disconnectIcon :: String }
+    , renderMode :: RenderMode
+    }
 
 -- | Internal actions.
 data Action
@@ -92,13 +122,16 @@ data Action
   | DisconnectWallet
   | Receive Input
   | ClickCustomButton String
+  | SelectProfile String
+  | ClickActionItem String
+  | ClickCreateProfile
 
 -- | Wallet connect Halogen component. Requires MonadAff and MonadCIP30.
-component
-  :: forall m
-   . MonadAff m
-  => MonadCIP30 m
-  => H.Component Query Input Output m
+component ::
+  forall m.
+  MonadAff m =>
+  MonadCIP30 m =>
+  H.Component Query Input Output m
 component =
   H.mkComponent
     { initialState
@@ -124,15 +157,15 @@ initialState i =
   , walletApi: Nothing
   , customButtons: i.buttons
   , assets: i.assets
+  , renderMode: i.renderMode
   }
 
 -- | Handle parent queries (SetWalletApi, GetWalletApi, etc.).
-handleQuery
-  :: forall m a
-   . MonadAff m
-  => MonadCIP30 m
-  => Query a
-  -> H.HalogenM State Action () Output m (Maybe a)
+handleQuery ::
+  forall m a.
+  MonadAff m =>
+  MonadCIP30 m =>
+  Query a -> H.HalogenM State Action () Output m (Maybe a)
 handleQuery = case _ of
   SetWalletApi api next -> do
     ws <- getTheAvailableWallets
@@ -152,12 +185,11 @@ handleQuery = case _ of
     pure (Just next)
 
 -- | Handle internal actions.
-handleAction
-  :: forall m
-   . MonadAff m
-  => MonadCIP30 m
-  => Action
-  -> H.HalogenM State Action () Output m Unit
+handleAction ::
+  forall m.
+  MonadAff m =>
+  MonadCIP30 m =>
+  Action -> H.HalogenM State Action () Output m Unit
 handleAction = case _ of
   ConnectWallet wname -> do
     api <- enableWallet wname
@@ -181,16 +213,32 @@ handleAction = case _ of
     H.modify_ _ { walletApi = Nothing, connectedWalletInfo = Nothing }
     H.raise WalletDisconnectedEvent
   Receive i -> do
-    H.modify_ _ { customButtons = i.buttons, assets = i.assets }
+    H.modify_ _ { customButtons = i.buttons, assets = i.assets, renderMode = i.renderMode }
   ClickCustomButton bid -> do
     H.raise (CustomButtonEvent bid)
+  SelectProfile pid -> do
+    H.raise (ProfileSelectedEvent pid)
+  ClickActionItem aid -> do
+    H.raise (ActionItemEvent aid)
+  ClickCreateProfile -> do
+    H.raise CreateProfileEvent
 
 --------------------------------------------------------------------------------
 -- Render
 --------------------------------------------------------------------------------
--- | Render the wallet connect dropdown UI.
+-- | Route to standalone or unified render based on mode.
 render :: forall m. State -> H.ComponentHTML Action () m
-render s =
+render s = case s.renderMode of
+  Standalone -> renderStandalone s
+  Unified cfg -> case s.connectedWalletInfo of
+    Nothing -> renderStandalone s
+    Just wallet -> renderUnified s cfg wallet
+
+--------------------------------------------------------------------------------
+-- Standalone Render (original behavior)
+--------------------------------------------------------------------------------
+renderStandalone :: forall m. State -> H.ComponentHTML Action () m
+renderStandalone s =
   HH.div [ HP.classes [ HH.ClassName "flex justify-end", HH.ClassName "dropdown dropdown-hover dropdown-bottom dropdown-end" ] ]
     [ HH.div
         [ HP.tabIndex 0
@@ -296,3 +344,112 @@ render s =
             , HH.text b.label
             ]
         ]
+
+--------------------------------------------------------------------------------
+-- Unified Render (combined profile selector + wallet info)
+--------------------------------------------------------------------------------
+renderUnified :: forall m. State -> UnifiedConfig -> ConnectedWalletInfo -> H.ComponentHTML Action () m
+renderUnified s cfg wallet =
+  HH.div [ HP.classes [ HH.ClassName "flex justify-end dropdown dropdown-bottom dropdown-end" ] ]
+    [ renderUnifiedTrigger cfg
+    , renderUnifiedDropdown s cfg wallet
+    ]
+
+renderUnifiedTrigger :: forall m. UnifiedConfig -> H.ComponentHTML Action () m
+renderUnifiedTrigger cfg =
+  HH.div
+    [ HP.tabIndex 0
+    , HPA.role "button"
+    , HP.classes [ HH.ClassName "btn btn-ghost btn-circle avatar" ]
+    ]
+    [ HH.div [ HP.classes [ HH.ClassName "indicator" ] ]
+        ( [ avatarImg ] <> pendingBadge )
+    ]
+  where
+  avatarImg = case cfg.activeProfile of
+    Just p ->
+      HH.div [ HP.classes [ HH.ClassName "w-10 rounded-full" ] ]
+        [ HH.img [ HP.src p.thumbnailUri, HP.alt p.name ] ]
+    Nothing ->
+      HH.div [ HP.classes [ HH.ClassName "avatar placeholder" ] ]
+        [ HH.div [ HP.classes [ HH.ClassName "bg-neutral-focus text-neutral-content w-10 rounded-full flex items-center justify-center" ] ]
+            [ HH.span [ HP.classes [ HH.ClassName "text-xl" ] ] [ HH.text "?" ] ]
+        ]
+  pendingBadge =
+    if cfg.pendingCount > 0 then
+      [ HH.span [ HP.classes [ HH.ClassName "indicator-item badge badge-sm badge-error" ] ]
+          [ HH.text (show cfg.pendingCount) ]
+      ]
+    else []
+
+renderUnifiedDropdown :: forall m. State -> UnifiedConfig -> ConnectedWalletInfo -> H.ComponentHTML Action () m
+renderUnifiedDropdown s cfg wallet =
+  HH.ul
+    [ HP.tabIndex 0
+    , HP.classes [ HH.ClassName "dropdown-content menu menu-sm bg-base-100 text-base-content rounded-box z-50 mt-3 w-64 p-2 shadow-lg" ]
+    ]
+    ( -- Section 1: Profiles
+      (map (renderUnifiedProfileItem cfg.activeProfile) cfg.profiles)
+      <> [ HH.li [ HE.onClick \_ -> ClickCreateProfile ]
+              [ HH.a [ HP.classes [ HH.ClassName "text-primary font-semibold" ] ]
+                  [ HH.text cfg.createProfileLabel ]
+              ]
+         ]
+      -- Divider
+      <> [ renderDevider "neutral" ]
+      -- Section 2: Actions
+      <> (map renderUnifiedActionItem cfg.actions)
+      -- Divider
+      <> [ renderDevider "neutral" ]
+      -- Section 3: Wallet info + disconnect
+      <> [ HH.li_
+              [ HH.div [ HP.classes [ HH.ClassName "flex flex-col gap-1 px-2 py-1 text-xs opacity-70" ] ]
+                  [ HH.div_ [ HH.text $ wallet.connectedWalletNetwork <> " \x00B7 " <> (formatNumberFromStr wallet.connectedWalletNativeCoinBalance) <> " \x20B3" ]
+                  , HH.div_ [ HH.text $ shortString 10 wallet.connectedWalletAddress ]
+                  ]
+              ]
+         , HH.li [ HE.onClick \_ -> DisconnectWallet ]
+              [ HH.a_
+                  [ HH.div
+                      [ HP.classes [ HH.ClassName "mask mask-hexagon w-8" ] ]
+                      [ HH.img [ HP.src s.assets.disconnectIcon ] ]
+                  , HH.text $ "Disconnect " <> wallet.connectedWalletName
+                  ]
+              ]
+         ]
+    )
+
+renderUnifiedProfileItem :: forall m. Maybe ProfileInfo -> ProfileInfo -> H.ComponentHTML Action () m
+renderUnifiedProfileItem activeProfile p =
+  let
+    isActive = case activeProfile of
+      Just a -> a.id == p.id
+      Nothing -> false
+  in
+    HH.li [ HE.onClick \_ -> SelectProfile p.id ]
+      [ HH.a_
+          [ HH.div [ HP.classes [ HH.ClassName "flex items-center gap-3 w-full" ] ]
+              [ HH.div [ HP.classes [ HH.ClassName "avatar" ] ]
+                  [ HH.div [ HP.classes [ HH.ClassName "w-8 rounded-full" ] ]
+                      [ HH.img [ HP.src p.thumbnailUri, HP.alt p.name ] ]
+                  ]
+              , HH.div [ HP.classes [ HH.ClassName "flex-1 min-w-0" ] ]
+                  [ HH.div [ HP.classes [ HH.ClassName "font-medium truncate" ] ] [ HH.text p.name ]
+                  , HH.div [ HP.classes [ HH.ClassName "text-xs opacity-60" ] ] [ HH.text p.subtitle ]
+                  ]
+              , if isActive then HH.span [ HP.classes [ HH.ClassName "text-success text-sm" ] ] [ HH.text "\x2713" ]
+                else HH.text ""
+              ]
+          ]
+      ]
+
+renderUnifiedActionItem :: forall m. ButtonConfig -> H.ComponentHTML Action () m
+renderUnifiedActionItem item =
+  HH.li [ HE.onClick \_ -> ClickActionItem item.id ]
+    [ HH.a_
+        [ HH.div
+            [ HP.classes [ HH.ClassName "mask mask-hexagon w-8" ] ]
+            [ HH.img [ HP.src item.iconSrc ] ]
+        , HH.text item.label
+        ]
+    ]
