@@ -362,25 +362,16 @@ renderUnifiedTrigger cfg =
     , HPA.role "button"
     , HP.classes [ HH.ClassName "btn btn-ghost btn-circle avatar" ]
     ]
-    [ HH.div [ HP.classes [ HH.ClassName "indicator" ] ]
-        ( [ avatarImg ] <> pendingBadge )
+    [ case cfg.activeProfile of
+        Just p ->
+          HH.div [ HP.classes [ HH.ClassName "w-10 rounded-full" ] ]
+            [ HH.img [ HP.src p.thumbnailUri, HP.alt p.name ] ]
+        Nothing ->
+          HH.div [ HP.classes [ HH.ClassName "avatar placeholder" ] ]
+            [ HH.div [ HP.classes [ HH.ClassName "bg-neutral-focus text-neutral-content w-10 rounded-full flex items-center justify-center" ] ]
+                [ HH.span [ HP.classes [ HH.ClassName "text-xl" ] ] [ HH.text "?" ] ]
+            ]
     ]
-  where
-  avatarImg = case cfg.activeProfile of
-    Just p ->
-      HH.div [ HP.classes [ HH.ClassName "w-10 rounded-full" ] ]
-        [ HH.img [ HP.src p.thumbnailUri, HP.alt p.name ] ]
-    Nothing ->
-      HH.div [ HP.classes [ HH.ClassName "avatar placeholder" ] ]
-        [ HH.div [ HP.classes [ HH.ClassName "bg-neutral-focus text-neutral-content w-10 rounded-full flex items-center justify-center" ] ]
-            [ HH.span [ HP.classes [ HH.ClassName "text-xl" ] ] [ HH.text "?" ] ]
-        ]
-  pendingBadge =
-    if cfg.pendingCount > 0 then
-      [ HH.span [ HP.classes [ HH.ClassName "indicator-item badge badge-sm badge-error" ] ]
-          [ HH.text (show cfg.pendingCount) ]
-      ]
-    else []
 
 renderUnifiedDropdown :: forall m. State -> UnifiedConfig -> ConnectedWalletInfo -> H.ComponentHTML Action () m
 renderUnifiedDropdown s cfg wallet =
@@ -398,12 +389,18 @@ renderUnifiedDropdown s cfg wallet =
       -- Divider
       <> [ renderDevider "neutral" ]
       -- Section 2: Actions
-      <> (map renderUnifiedActionItem cfg.actions)
+      <> (map (renderUnifiedActionItem cfg.pendingCount) cfg.actions)
       -- Divider
       <> [ renderDevider "neutral" ]
       -- Section 3: Wallet info + disconnect
       <> [ HH.li_
-              [ HH.div [ HP.classes [ HH.ClassName "flex flex-col gap-1 px-2 py-1 text-xs opacity-70" ] ]
+              [ HH.div [ HP.classes [ HH.ClassName "flex items-center gap-2 px-2 py-1" ] ]
+                  [ HH.div
+                      [ HP.classes [ HH.ClassName "mask mask-hexagon bg-base-100 w-6" ] ]
+                      [ HH.img [ HP.src wallet.connectedWalletIcon ] ]
+                  , HH.span [ HP.classes [ HH.ClassName "font-medium text-sm" ] ] [ HH.text "Connected" ]
+                  ]
+              , HH.div [ HP.classes [ HH.ClassName "flex flex-col gap-1 px-2 py-1 text-xs opacity-70" ] ]
                   [ HH.div_ [ HH.text $ wallet.connectedWalletNetwork <> " \x00B7 " <> (formatNumberFromStr wallet.connectedWalletNativeCoinBalance) <> " \x20B3" ]
                   , HH.div_ [ HH.text $ shortString 10 wallet.connectedWalletAddress ]
                   ]
@@ -443,13 +440,19 @@ renderUnifiedProfileItem activeProfile p =
           ]
       ]
 
-renderUnifiedActionItem :: forall m. ButtonConfig -> H.ComponentHTML Action () m
-renderUnifiedActionItem item =
+renderUnifiedActionItem :: forall m. Int -> ButtonConfig -> H.ComponentHTML Action () m
+renderUnifiedActionItem pendingCount item =
   HH.li [ HE.onClick \_ -> ClickActionItem item.id ]
-    [ HH.a_
-        [ HH.div
-            [ HP.classes [ HH.ClassName "mask mask-hexagon w-8" ] ]
-            [ HH.img [ HP.src item.iconSrc ] ]
-        , HH.text item.label
+    [ HH.a [ HP.classes [ HH.ClassName "flex items-center justify-between" ] ]
+        [ HH.div [ HP.classes [ HH.ClassName "flex items-center gap-2" ] ]
+            [ HH.div
+                [ HP.classes [ HH.ClassName "mask mask-hexagon w-8" ] ]
+                [ HH.img [ HP.src item.iconSrc ] ]
+            , HH.text item.label
+            ]
+        , if item.id == "my-dojo" && pendingCount > 0 then
+            HH.span [ HP.classes [ HH.ClassName "badge badge-sm badge-error" ] ]
+              [ HH.text (show pendingCount) ]
+          else HH.text ""
         ]
     ]
