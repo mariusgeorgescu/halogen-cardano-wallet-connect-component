@@ -1,6 +1,8 @@
 package:
   name: halogen-wallet-connect-component
   dependencies:
+    - aff
+    - aff-promise
     - arrays
     - cardano-capabilities
     - cardano-serialization-lib

@@ -5,6 +5,8 @@ A reusable Halogen component for Cardano wallet connection with CIP-30 support. 
 ## Features
 
 - 🔗 **CIP-30 Wallet Integration** - Connect to any CIP-30 compatible Cardano wallet
+- 🌐 **UTXOS Wallet-as-a-Service** - Social login wallets (Google, Discord, Apple, X) via UTXOS SDK
+- 💳 **Fiat On-Ramp** - Buy ADA with credit card directly in-app (powered by Mercuryo)
 - 🎨 **Customizable UI** - Configurable buttons and asset URLs
 - 🔄 **State Management** - Built-in wallet state and connection handling
 - 📦 **Type-Safe** - Full PureScript type safety with Halogen
@@ -43,6 +45,14 @@ Then install:
 
 ```bash
 spago install
+```
+
+### Optional: UTXOS Wallet-as-a-Service
+
+If you plan to use the UTXOS social login wallet feature, install the UTXOS SDK:
+
+```bash
+npm install @utxos/sdk
 ```
 
 ## Quick Start
@@ -116,6 +126,15 @@ render state =
         { connectIcon: "/assets/wallet-icon.svg"
         , disconnectIcon: "/assets/disconnect-icon.svg"
         }
+    , renderMode: WC.Standalone
+    , utxosConfig: Nothing
+      -- To enable UTXOS social login, use:
+      -- , utxosConfig: Just
+      --     { projectId: "your-utxos-project-id"
+      --     , networkId: 1   -- 0 = preprod, 1 = mainnet
+      --     , walletIcon: "/assets/utxos-icon.svg"
+      --     , walletLabel: "Social Login"
+      --     }
     }
 
   customButtons =
@@ -138,6 +157,10 @@ handleAction = case _ of
         "home" -> navigateToHome
         "settings" -> openSettings
         _ -> pure unit
+    WC.FiatOnrampInitiatedEvent -> do
+      -- Handle fiat on-ramp opened (UTXOS/Mercuryo)
+      pure unit
+    _ -> pure unit
 ```
 
 ## API Reference
@@ -151,6 +174,8 @@ type Input =
       { connectIcon :: String
       , disconnectIcon :: String  
       }
+  , renderMode :: RenderMode
+  , utxosConfig :: Maybe UtxosConfig
   }
 
 type ButtonConfig =
@@ -158,6 +183,14 @@ type ButtonConfig =
   , label :: String        -- Display text
   , iconSrc :: String      -- Icon URL
   , classes :: Array String -- CSS classes
+  }
+
+-- | Configuration for UTXOS Wallet-as-a-Service integration.
+type UtxosConfig =
+  { projectId :: String    -- UTXOS project ID from dashboard
+  , networkId :: Int       -- 0 = preprod, 1 = mainnet
+  , walletIcon :: String   -- Icon URL for display in wallet list
+  , walletLabel :: String  -- Display name, e.g. "Social Login"
   }
 ```
 
@@ -167,7 +200,11 @@ type ButtonConfig =
 data Output
   = WalletConnectedEvent
   | WalletDisconnectedEvent  
-  | CustomButtonEvent String -- Button ID
+  | CustomButtonEvent String      -- Button ID
+  | ProfileSelectedEvent String   -- Profile ID
+  | ActionItemEvent String        -- Action Item ID
+  | CreateProfileEvent
+  | FiatOnrampInitiatedEvent      -- Fiat on-ramp opened (UTXOS/Mercuryo)
 ```
 
 ### Component Queries
@@ -179,6 +216,7 @@ data Query a
   | GetConnectedWalletInfo (Maybe ConnectedWalletInfo -> a)
   | GetAvailableWalletExtensions (Array (Tuple String String) -> a)
   | DisconnectWalletQuery a
+  | RefreshWalletInfoQuery a
 ```
 
 **Query Usage Examples:**
@@ -198,6 +236,9 @@ wallets <- H.query WC.walletConnectProxy unit $ H.mkRequest WC.GetAvailableWalle
 
 -- Disconnect wallet programmatically
 _ <- H.query WC.walletConnectProxy unit $ H.mkTell WC.DisconnectWalletQuery
+
+-- Refresh wallet info (re-fetches balance, address, network from the stored Api)
+_ <- H.query WC.walletConnectProxy unit $ H.mkTell WC.RefreshWalletInfoQuery
 ```
 
 ### Connected Wallet Info
@@ -271,14 +312,22 @@ The component automatically adjusts button colors based on connection state (pri
 ## Component Behavior
 
 ### Connection Flow
+
+**Browser extension wallets (CIP-30):**
 1. Component initializes and checks for available wallets
-2. If no wallets are available, shows a message with a link to install Lace wallet
+2. If no wallets are available (and no UTXOS config), shows a message with a link to install Lace wallet
 3. If wallets are available, shows a dropdown list of wallets
 4. User clicks a wallet to connect
 5. Component enables the wallet and fetches connection info (name, icon, network, address, balance)
 6. Connected state is displayed with wallet details in a dropdown menu
 7. Custom buttons (if configured) appear in the dropdown
 8. User can disconnect via the dropdown menu
+
+**UTXOS social login wallets (when `utxosConfig` is provided):**
+1. A "Social Login" option appears below browser extension wallets in the dropdown
+2. User clicks Social Login -- UTXOS SDK opens authentication popup (Google, Discord, Apple, X)
+3. After authentication, wallet info is fetched via CIP-30 compatible API
+4. A "Buy ADA" button appears in the dropdown when connected via UTXOS (fiat on-ramp)
 
 ### State Management
 - The component maintains its own internal state for wallet connection
@@ -322,6 +371,8 @@ This library depends on:
 - `cardano-capabilities` - Cardano capability type classes (provides `MonadCIP30`)
 - `cip30` - CIP-30 wallet interface bindings
 - `cardano-serialization-lib` - Cardano serialization library
+- `aff-promise` - Promise-to-Aff conversion for UTXOS FFI
+- `@utxos/sdk` (npm, optional peer dependency) - UTXOS Wallet-as-a-Service SDK
 - Standard PureScript packages (arrays, effect, maybe, prelude, etc.)
 
 ## License
@@ -337,6 +388,16 @@ MIT License - see [LICENSE](./LICENSE) file for details.
 ## Changelog
 
 See [CHANGELOG.md](./CHANGELOG.md) for detailed version history.
+
+### v2.0.0
+- **BREAKING**: Added `utxosConfig :: Maybe UtxosConfig` to `Input` (pass `Nothing` to preserve existing behavior)
+- Added UTXOS Wallet-as-a-Service integration (social login wallets)
+- Added Fiat On-Ramp (Buy ADA) support via UTXOS/Mercuryo
+- Added `FiatOnrampInitiatedEvent` output
+- Added `WalletConnection` ADT for type-safe connection source tracking
+- Added `Utxos.Sdk` module with FFI bindings
+- Added `RefreshWalletInfoQuery` query to re-fetch balance, address, and network from the connected wallet
+- New peer dependency: `@utxos/sdk` (optional, only needed when using UTXOS features)
 
 ### v1.1.1
 - Removed redundant `WalletConnect/Component.purs` re-export module

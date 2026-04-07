@@ -18,9 +18,9 @@ import Cardano.Capabilities.Wallet.MonadCIP30
 import Cardano.Wallet.Cip30 (Api)
 import Components.HTML.RenderUtils (renderDevider, renderLink)
 import Data.Array (null)
-import Data.Maybe (Maybe(..), isJust)
+import Data.Maybe (Maybe(..), isJust, isNothing)
 import Data.Tuple (Tuple, fst, snd)
-import Effect.Aff.Class (class MonadAff)
+import Effect.Aff.Class (class MonadAff, liftAff)
 import Halogen as H
 import Halogen.HTML as HH
 import Halogen.HTML.Events as HE
@@ -28,33 +28,33 @@ import Halogen.HTML.Properties as HP
 import Halogen.HTML.Properties.ARIA as HPA
 import Type.Proxy (Proxy(..))
 import Utils (formatNumberFromStr, shortString)
+import Utxos.Sdk (UtxosConfig, UtxosWallet, utxosEnable, getCardanoApi, utxosOnramp)
 
 --------------------------------------------------------------------------------
 -- Component Interface
 --------------------------------------------------------------------------------
 -- | Slot type for the wallet connect component.
-type Slot
-  = H.Slot Query Output Unit
+type Slot = H.Slot Query Output Unit
 
 -- | Proxy for the wallet connect slot label (use with HH.slot).
 _walletConnect :: Proxy "walletConnectComponent"
 _walletConnect = Proxy
 
 -- | Customizable input: array of buttons to render.
-type ButtonConfig
-  = { id :: String
-    , label :: String
-    , iconSrc :: String
-    , classes :: Array String
-    }
+type ButtonConfig =
+  { id :: String
+  , label :: String
+  , iconSrc :: String
+  , classes :: Array String
+  }
 
 -- | Generic profile info for unified mode (no domain dependency).
-type ProfileInfo
-  = { id :: String
-    , name :: String
-    , subtitle :: String
-    , thumbnailUri :: String
-    }
+type ProfileInfo =
+  { id :: String
+  , name :: String
+  , subtitle :: String
+  , thumbnailUri :: String
+  }
 
 -- | Render mode: Standalone (current default) or Unified (combined identity button).
 data RenderMode
@@ -62,23 +62,24 @@ data RenderMode
   | Unified UnifiedConfig
 
 -- | Configuration for unified render mode.
-type UnifiedConfig
-  = { profiles :: Array ProfileInfo
-    , activeProfile :: Maybe ProfileInfo
-    , actions :: Array ButtonConfig
-    , pendingCount :: Int
-    , createProfileLabel :: String
-    }
+type UnifiedConfig =
+  { profiles :: Array ProfileInfo
+  , activeProfile :: Maybe ProfileInfo
+  , actions :: Array ButtonConfig
+  , pendingCount :: Int
+  , createProfileLabel :: String
+  }
 
--- | Input: custom buttons, asset URLs, and render mode.
-type Input
-  = { buttons :: Array ButtonConfig
-    , assets ::
-        { connectIcon :: String
-        , disconnectIcon :: String
-        }
-    , renderMode :: RenderMode
-    }
+-- | Input: custom buttons, asset URLs, render mode, and optional UTXOS config.
+type Input =
+  { buttons :: Array ButtonConfig
+  , assets ::
+      { connectIcon :: String
+      , disconnectIcon :: String
+      }
+  , renderMode :: RenderMode
+  , utxosConfig :: Maybe UtxosConfig
+  }
 
 -- | Output messages raised to the parent.
 data Output
@@ -88,6 +89,7 @@ data Output
   | ProfileSelectedEvent String
   | ActionItemEvent String
   | CreateProfileEvent
+  | FiatOnrampInitiatedEvent
 
 -- | Public queries to update/query walletApi and state.
 data Query a
@@ -96,29 +98,40 @@ data Query a
   | GetConnectedWalletInfo (Maybe ConnectedWalletInfo -> a)
   | GetAvailableWalletExtensions (Array (Tuple String String) -> a)
   | DisconnectWalletQuery a
+  | RefreshWalletInfoQuery a
 
 -- | Connected wallet display info.
-type ConnectedWalletInfo
-  = { connectedWalletName :: String
-    , connectedWalletIcon :: String
-    , connectedWalletNetwork :: String
-    , connectedWalletAddress :: String
-    , connectedWalletNativeCoinBalance :: String
-    }
+type ConnectedWalletInfo =
+  { connectedWalletName :: String
+  , connectedWalletIcon :: String
+  , connectedWalletNetwork :: String
+  , connectedWalletAddress :: String
+  , connectedWalletNativeCoinBalance :: String
+  }
+
+-- | How the current wallet was connected.
+data WalletConnection
+  = NotConnected
+  | ViaExtension
+  | ViaUtxos UtxosWallet
 
 -- | Component state (internal).
-type State
-  = { availableWalletExtensions :: Array (Tuple String String)
-    , connectedWalletInfo :: Maybe ConnectedWalletInfo
-    , walletApi :: Maybe Api
-    , customButtons :: Array ButtonConfig
-    , assets :: { connectIcon :: String, disconnectIcon :: String }
-    , renderMode :: RenderMode
-    }
+type State =
+  { availableWalletExtensions :: Array (Tuple String String)
+  , connectedWalletInfo :: Maybe ConnectedWalletInfo
+  , walletApi :: Maybe Api
+  , customButtons :: Array ButtonConfig
+  , assets :: { connectIcon :: String, disconnectIcon :: String }
+  , renderMode :: RenderMode
+  , utxosConfig :: Maybe UtxosConfig
+  , walletConnection :: WalletConnection
+  }
 
 -- | Internal actions.
 data Action
   = ConnectWallet String
+  | ConnectUtxosWallet
+  | OpenFiatOnramp
   | DisconnectWallet
   | Receive Input
   | ClickCustomButton String
@@ -127,11 +140,11 @@ data Action
   | ClickCreateProfile
 
 -- | Wallet connect Halogen component. Requires MonadAff and MonadCIP30.
-component ::
-  forall m.
-  MonadAff m =>
-  MonadCIP30 m =>
-  H.Component Query Input Output m
+component
+  :: forall m
+   . MonadAff m
+  => MonadCIP30 m
+  => H.Component Query Input Output m
 component =
   H.mkComponent
     { initialState
@@ -158,14 +171,17 @@ initialState i =
   , customButtons: i.buttons
   , assets: i.assets
   , renderMode: i.renderMode
+  , utxosConfig: i.utxosConfig
+  , walletConnection: NotConnected
   }
 
 -- | Handle parent queries (SetWalletApi, GetWalletApi, etc.).
-handleQuery ::
-  forall m a.
-  MonadAff m =>
-  MonadCIP30 m =>
-  Query a -> H.HalogenM State Action () Output m (Maybe a)
+handleQuery
+  :: forall m a
+   . MonadAff m
+  => MonadCIP30 m
+  => Query a
+  -> H.HalogenM State Action () Output m (Maybe a)
 handleQuery = case _ of
   SetWalletApi api next -> do
     ws <- getTheAvailableWallets
@@ -183,13 +199,30 @@ handleQuery = case _ of
   DisconnectWalletQuery next -> do
     handleAction DisconnectWallet
     pure (Just next)
+  RefreshWalletInfoQuery next -> do
+    st <- H.get
+    case st.walletApi, st.connectedWalletInfo of
+      Just api, Just cw -> do
+        network <- getNetworkName api
+        adaBalance <- getNativeCoinBalanceString api
+        firstAddrBech32 <- getUserFirstAddressBech32 api
+        H.modify_ _
+          { connectedWalletInfo = Just cw
+              { connectedWalletNetwork = network
+              , connectedWalletAddress = firstAddrBech32
+              , connectedWalletNativeCoinBalance = adaBalance
+              }
+          }
+        pure (Just next)
+      _, _ -> pure (Just next)
 
 -- | Handle internal actions.
-handleAction ::
-  forall m.
-  MonadAff m =>
-  MonadCIP30 m =>
-  Action -> H.HalogenM State Action () Output m Unit
+handleAction
+  :: forall m
+   . MonadAff m
+  => MonadCIP30 m
+  => Action
+  -> H.HalogenM State Action () Output m Unit
 handleAction = case _ of
   ConnectWallet wname -> do
     api <- enableWallet wname
@@ -207,13 +240,45 @@ handleAction = case _ of
           , connectedWalletNativeCoinBalance: adaBalance
           , connectedWalletIcon: icon
           }
-    H.modify_ _ { walletApi = Just api, connectedWalletInfo = cw }
+    H.modify_ _ { walletApi = Just api, connectedWalletInfo = cw, walletConnection = ViaExtension }
     H.raise WalletConnectedEvent
+  ConnectUtxosWallet -> do
+    st <- H.get
+    case st.utxosConfig of
+      Nothing -> pure unit
+      Just cfg -> do
+        utxosWallet <- liftAff $ utxosEnable cfg
+        let api = getCardanoApi utxosWallet
+        network <- getNetworkName api
+        adaBalance <- getNativeCoinBalanceString api
+        firstAddrBech32 <- getUserFirstAddressBech32 api
+        let
+          cw =
+            Just
+              { connectedWalletName: cfg.walletLabel
+              , connectedWalletIcon: cfg.walletIcon
+              , connectedWalletNetwork: network
+              , connectedWalletAddress: firstAddrBech32
+              , connectedWalletNativeCoinBalance: adaBalance
+              }
+        H.modify_ _
+          { walletApi = Just api
+          , connectedWalletInfo = cw
+          , walletConnection = ViaUtxos utxosWallet
+          }
+        H.raise WalletConnectedEvent
+  OpenFiatOnramp -> do
+    st <- H.get
+    case st.walletConnection of
+      ViaUtxos utxosWallet -> do
+        liftAff $ utxosOnramp utxosWallet
+        H.raise FiatOnrampInitiatedEvent
+      _ -> pure unit
   DisconnectWallet -> do
-    H.modify_ _ { walletApi = Nothing, connectedWalletInfo = Nothing }
+    H.modify_ _ { walletApi = Nothing, connectedWalletInfo = Nothing, walletConnection = NotConnected }
     H.raise WalletDisconnectedEvent
   Receive i -> do
-    H.modify_ _ { customButtons = i.buttons, assets = i.assets, renderMode = i.renderMode }
+    H.modify_ _ { customButtons = i.buttons, assets = i.assets, renderMode = i.renderMode, utxosConfig = i.utxosConfig }
   ClickCustomButton bid -> do
     H.raise (CustomButtonEvent bid)
   SelectProfile pid -> do
@@ -271,36 +336,48 @@ renderStandalone s =
         [ HP.tabIndex 0
         , HP.classes [ HH.ClassName $ "menu dropdown-content bg-" <> buttonColour <> "  text-" <> buttonColour <> "-content rounded-box z-40 min-w-64 w-fit p-2 " ]
         ]
-        [ HH.li_
-            [ HH.div
-                [ HP.classes [ HH.ClassName "flex items-center gap-2" ] ]
-                [ HH.span [ HP.classes [ HH.ClassName "font-bold" ] ] [ HH.text "Network:" ]
-                , HH.span_ [ HH.text wallet.connectedWalletNetwork ]
+        ( [ HH.li_
+              [ HH.div
+                  [ HP.classes [ HH.ClassName "flex items-center gap-2" ] ]
+                  [ HH.span [ HP.classes [ HH.ClassName "font-bold" ] ] [ HH.text "Network:" ]
+                  , HH.span_ [ HH.text wallet.connectedWalletNetwork ]
+                  ]
+              , HH.div
+                  [ HP.classes [ HH.ClassName "flex items-center gap-2" ] ]
+                  [ HH.span [ HP.classes [ HH.ClassName "font-bold" ] ] [ HH.text "Address:" ]
+                  , HH.span_ [ HH.text (shortString 10 wallet.connectedWalletAddress) ]
+                  ]
+              , HH.div
+                  [ HP.classes [ HH.ClassName "flex items-center gap-2" ] ]
+                  [ HH.span [ HP.classes [ HH.ClassName "font-bold" ] ] [ HH.text "Balance:" ]
+                  , HH.span_ [ HH.text $ (formatNumberFromStr wallet.connectedWalletNativeCoinBalance) <> " ₳" ]
+                  ]
+              ]
+          , renderDevider "neutral"
+          , HH.div_ (renderCustomDropdownButton <$> customButtons)
+          ]
+            <> case s.walletConnection of
+              ViaUtxos _ ->
+                [ renderDevider "neutral"
+                , HH.li [ HE.onClick \_ -> OpenFiatOnramp ]
+                    [ HH.a_
+                        [ HH.text "Buy ADA" ]
+                    ]
                 ]
-            , HH.div
-                [ HP.classes [ HH.ClassName "flex items-center gap-2" ] ]
-                [ HH.span [ HP.classes [ HH.ClassName "font-bold" ] ] [ HH.text "Address:" ]
-                , HH.span_ [ HH.text (shortString 10 wallet.connectedWalletAddress) ]
-                ]
-            , HH.div
-                [ HP.classes [ HH.ClassName "flex items-center gap-2" ] ]
-                [ HH.span [ HP.classes [ HH.ClassName "font-bold" ] ] [ HH.text "Balance:" ]
-                , HH.span_ [ HH.text $ (formatNumberFromStr wallet.connectedWalletNativeCoinBalance) <> " ₳" ]
-                ]
-            ]
-        , renderDevider "neutral"
-        , HH.div_ (renderCustomDropdownButton <$> customButtons)
-        , HH.li [ HE.onClick \_ -> DisconnectWallet ]
-            [ HH.a_
-                [ HH.div
-                    [ HP.classes [ HH.ClassName "mask mask-hexagon  w-8" ] ]
-                    [ HH.img [ HP.src s.assets.disconnectIcon ] ]
-                , HH.text $ "Disconnect " <> wallet.connectedWalletName
-                ]
-            ]
-        ]
+              _ -> []
+            <>
+              [ HH.li [ HE.onClick \_ -> DisconnectWallet ]
+                  [ HH.a_
+                      [ HH.div
+                          [ HP.classes [ HH.ClassName "mask mask-hexagon  w-8" ] ]
+                          [ HH.img [ HP.src s.assets.disconnectIcon ] ]
+                      , HH.text $ "Disconnect " <> wallet.connectedWalletName
+                      ]
+                  ]
+              ]
+        )
     Nothing ->
-      if null availableWalletExtensions then
+      if null availableWalletExtensions && isNothing s.utxosConfig then
         HH.div [ HP.classes [ HH.ClassName $ "dropdown-content z-40 card card-compact w-64 p-2  bg-" <> buttonColour <> "  text-" <> buttonColour <> "-content" ] ]
           [ HH.div [ HP.classes [ HH.ClassName "card-body" ] ]
               [ HH.h4 [ HP.classes [ HH.ClassName "card-title" ] ] [ HH.text "You do not have any wallet installed yet !" ]
@@ -317,7 +394,22 @@ renderStandalone s =
           [ HP.tabIndex 0
           , HP.classes [ HH.ClassName $ "dropdown-content menu  bg-" <> buttonColour <> "  text-" <> buttonColour <> "-content rounded-box z-40 w-64 p-2 " ]
           ]
-          (renderWalletListItem <$> availableWalletExtensions)
+          ( (renderWalletListItem <$> availableWalletExtensions)
+              <> case s.utxosConfig of
+                Nothing -> []
+                Just cfg ->
+                  (if null availableWalletExtensions then [] else [ renderDevider "neutral" ])
+                    <>
+                      [ HH.li [ HE.onClick \_ -> ConnectUtxosWallet ]
+                          [ HH.a_
+                              [ HH.div
+                                  [ HP.classes [ HH.ClassName "mask mask-hexagon bg-base-100 w-8" ] ]
+                                  [ HH.img [ HP.src cfg.walletIcon ] ]
+                              , HH.text cfg.walletLabel
+                              ]
+                          ]
+                      ]
+          )
     where
     renderWalletListItem wnameTuple =
       let
@@ -381,19 +473,30 @@ renderUnifiedDropdown s cfg wallet =
     ]
     ( -- Section 1: Profiles
       (map (renderUnifiedProfileItem cfg.activeProfile) cfg.profiles)
-      <> [ HH.li [ HE.onClick \_ -> ClickCreateProfile ]
+        <>
+          [ HH.li [ HE.onClick \_ -> ClickCreateProfile ]
               [ HH.a [ HP.classes [ HH.ClassName "text-primary font-semibold" ] ]
                   [ HH.text cfg.createProfileLabel ]
               ]
-         ]
-      -- Divider
-      <> [ renderDevider "neutral" ]
-      -- Section 2: Actions
-      <> (map (renderUnifiedActionItem cfg.pendingCount) cfg.actions)
-      -- Divider
-      <> [ renderDevider "neutral" ]
-      -- Section 3: Wallet info + disconnect
-      <> [ HH.li_
+          ]
+        -- Divider
+        <> [ renderDevider "neutral" ]
+        -- Section 2: Actions
+        <> (map (renderUnifiedActionItem cfg.pendingCount) cfg.actions)
+        -- Section 2b: Buy ADA (UTXOS on-ramp)
+        <> case s.walletConnection of
+          ViaUtxos _ ->
+            [ HH.li [ HE.onClick \_ -> OpenFiatOnramp ]
+                [ HH.a [ HP.classes [ HH.ClassName "flex items-center gap-2" ] ]
+                    [ HH.text "Buy ADA" ]
+                ]
+            ]
+          _ -> []
+        -- Divider
+        <> [ renderDevider "neutral" ]
+        -- Section 3: Wallet info + disconnect
+        <>
+          [ HH.li_
               [ HH.div [ HP.classes [ HH.ClassName "flex items-center gap-2 px-2 py-1" ] ]
                   [ HH.div
                       [ HP.classes [ HH.ClassName "mask mask-hexagon bg-base-100 w-6" ] ]
@@ -405,7 +508,7 @@ renderUnifiedDropdown s cfg wallet =
                   , HH.div_ [ HH.text $ shortString 10 wallet.connectedWalletAddress ]
                   ]
               ]
-         , HH.li [ HE.onClick \_ -> DisconnectWallet ]
+          , HH.li [ HE.onClick \_ -> DisconnectWallet ]
               [ HH.a_
                   [ HH.div
                       [ HP.classes [ HH.ClassName "mask mask-hexagon w-8" ] ]
@@ -413,7 +516,7 @@ renderUnifiedDropdown s cfg wallet =
                   , HH.text $ "Disconnect " <> wallet.connectedWalletName
                   ]
               ]
-         ]
+          ]
     )
 
 renderUnifiedProfileItem :: forall m. Maybe ProfileInfo -> ProfileInfo -> H.ComponentHTML Action () m

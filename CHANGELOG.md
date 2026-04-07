@@ -5,6 +5,23 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.0] - 2026-04-08
+
+### Added
+- UTXOS Wallet-as-a-Service integration (social login wallets via Google, Discord, Apple, X)
+- Fiat On-Ramp (Buy ADA) support via UTXOS/Mercuryo
+- `Utxos.Sdk` module with FFI bindings (`UtxosConfig`, `UtxosWallet`, `utxosEnable`, `getCardanoApi`, `utxosOnramp`)
+- `WalletConnection` ADT (`NotConnected | ViaExtension | ViaUtxos`) for type-safe connection source tracking
+- `FiatOnrampInitiatedEvent` output event
+- `RefreshWalletInfoQuery` query to re-fetch balance, address, and network from the connected wallet
+- `@utxos/sdk` as optional npm peer dependency (only needed when using UTXOS features)
+- `aff-promise` and `aff` as explicit PureScript dependencies
+
+### Changed
+- **BREAKING**: Added `utxosConfig :: Maybe UtxosConfig` to `Input` (pass `Nothing` to preserve existing behavior)
+- Bumped version to 2.0.0
+- "No wallet installed" message now only shows when both browser extensions and UTXOS config are unavailable
+
 ## [1.1.1] - 2024-12-19
 
 ### Changed
