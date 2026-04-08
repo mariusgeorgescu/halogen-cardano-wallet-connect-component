@@ -5,6 +5,20 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.1.0] - 2026-04-08
+
+### Added
+- `IFetcher` opaque type for Mesh chain data providers (BlockfrostProvider, MaestroProvider, etc.)
+- `fetcher :: Maybe IFetcher` and `submitter :: Maybe IFetcher` fields on `UtxosConfig` — passed through to `Web3Wallet.enable()` for chain data access (balance, UTXOs, signing)
+- Workaround for `@utxos/sdk@0.2.0` bug: `initCardanoWallet()` drops the fetcher before creating `MeshCardanoHeadlessWallet`; the FFI now post-patches `wallet.cardano.fetcher` after `enable()` returns
+- `getUtxosUserAvatarUrl` — extract social login avatar URL from the UTXOS user profile (Google, Discord, Apple, X)
+- `getUtxosUserName` — extract social login username from the UTXOS user profile
+
+### Changed
+- `ConnectUtxosWallet` handler now uses the social login avatar as `connectedWalletIcon` and username as `connectedWalletName` (falls back to `walletIcon`/`walletLabel` from config)
+- Unified trigger shows the wallet icon (social avatar or extension icon) instead of a "?" placeholder when no profile is active
+- Added `nullable` PureScript dependency
+
 ## [2.0.0] - 2026-04-08
 
 ### Added

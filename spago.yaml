@@ -11,6 +11,7 @@ package:
     - formatters
     - halogen
     - maybe
+    - nullable
     - numbers
     - prelude
     - strings

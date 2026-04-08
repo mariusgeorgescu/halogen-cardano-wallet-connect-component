@@ -18,7 +18,7 @@ import Cardano.Capabilities.Wallet.MonadCIP30
 import Cardano.Wallet.Cip30 (Api)
 import Components.HTML.RenderUtils (renderDevider, renderLink)
 import Data.Array (null)
-import Data.Maybe (Maybe(..), isJust, isNothing)
+import Data.Maybe (Maybe(..), fromMaybe, isJust, isNothing)
 import Data.Tuple (Tuple, fst, snd)
 import Effect.Aff.Class (class MonadAff, liftAff)
 import Halogen as H
@@ -28,7 +28,7 @@ import Halogen.HTML.Properties as HP
 import Halogen.HTML.Properties.ARIA as HPA
 import Type.Proxy (Proxy(..))
 import Utils (formatNumberFromStr, shortString)
-import Utxos.Sdk (UtxosConfig, UtxosWallet, utxosEnable, getCardanoApi, utxosOnramp)
+import Utxos.Sdk (UtxosConfig, UtxosWallet, utxosEnable, getCardanoApi, getUtxosUserAvatarUrl, getUtxosUserName, utxosOnramp)
 
 --------------------------------------------------------------------------------
 -- Component Interface
@@ -253,10 +253,12 @@ handleAction = case _ of
         adaBalance <- getNativeCoinBalanceString api
         firstAddrBech32 <- getUserFirstAddressBech32 api
         let
+          avatarUrl = fromMaybe cfg.walletIcon (getUtxosUserAvatarUrl utxosWallet)
+          userName = fromMaybe cfg.walletLabel (getUtxosUserName utxosWallet)
           cw =
             Just
-              { connectedWalletName: cfg.walletLabel
-              , connectedWalletIcon: cfg.walletIcon
+              { connectedWalletName: userName
+              , connectedWalletIcon: avatarUrl
               , connectedWalletNetwork: network
               , connectedWalletAddress: firstAddrBech32
               , connectedWalletNativeCoinBalance: adaBalance
@@ -443,12 +445,12 @@ renderStandalone s =
 renderUnified :: forall m. State -> UnifiedConfig -> ConnectedWalletInfo -> H.ComponentHTML Action () m
 renderUnified s cfg wallet =
   HH.div [ HP.classes [ HH.ClassName "flex justify-end dropdown dropdown-bottom dropdown-end" ] ]
-    [ renderUnifiedTrigger cfg
+    [ renderUnifiedTrigger cfg wallet
     , renderUnifiedDropdown s cfg wallet
     ]
 
-renderUnifiedTrigger :: forall m. UnifiedConfig -> H.ComponentHTML Action () m
-renderUnifiedTrigger cfg =
+renderUnifiedTrigger :: forall m. UnifiedConfig -> ConnectedWalletInfo -> H.ComponentHTML Action () m
+renderUnifiedTrigger cfg wallet =
   HH.div
     [ HP.tabIndex 0
     , HPA.role "button"
@@ -459,10 +461,8 @@ renderUnifiedTrigger cfg =
           HH.div [ HP.classes [ HH.ClassName "w-10 rounded-full" ] ]
             [ HH.img [ HP.src p.thumbnailUri, HP.alt p.name ] ]
         Nothing ->
-          HH.div [ HP.classes [ HH.ClassName "avatar placeholder" ] ]
-            [ HH.div [ HP.classes [ HH.ClassName "bg-neutral-focus text-neutral-content w-10 rounded-full flex items-center justify-center" ] ]
-                [ HH.span [ HP.classes [ HH.ClassName "text-xl" ] ] [ HH.text "?" ] ]
-            ]
+          HH.div [ HP.classes [ HH.ClassName "w-10 rounded-full" ] ]
+            [ HH.img [ HP.src wallet.connectedWalletIcon, HP.alt wallet.connectedWalletName ] ]
     ]
 
 renderUnifiedDropdown :: forall m. State -> UnifiedConfig -> ConnectedWalletInfo -> H.ComponentHTML Action () m
