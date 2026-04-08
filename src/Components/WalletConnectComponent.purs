@@ -84,6 +84,8 @@ type Input =
   , renderMode :: RenderMode
   , utxosConfig :: Maybe UtxosConfig
   , onrampUrl :: Maybe String
+  -- | When false, Buy ADA still raises `FiatOnrampInitiatedEvent` but does not open the UTXOS SDK or extension URL (parent can toast, e.g. mainnet-only).
+  , allowFiatOnramp :: Boolean
   }
 
 -- | Output messages raised to the parent.
@@ -130,6 +132,7 @@ type State =
   , renderMode :: RenderMode
   , utxosConfig :: Maybe UtxosConfig
   , onrampUrl :: Maybe String
+  , allowFiatOnramp :: Boolean
   , walletConnection :: WalletConnection
   }
 
@@ -179,6 +182,7 @@ initialState i =
   , renderMode: i.renderMode
   , utxosConfig: i.utxosConfig
   , onrampUrl: i.onrampUrl
+  , allowFiatOnramp: i.allowFiatOnramp
   , walletConnection: NotConnected
   }
 
@@ -280,19 +284,22 @@ handleAction = case _ of
     st <- H.get
     case st.walletConnection, st.connectedWalletInfo of
       ViaUtxos utxosWallet, _ -> do
-        liftAff $ utxosOnramp utxosWallet
+        if st.allowFiatOnramp then liftAff $ utxosOnramp utxosWallet
+        else pure unit
         H.raise FiatOnrampInitiatedEvent
       ViaExtension, Just cw
         | Just url <- st.onrampUrl -> do
-            let fullUrl = Str.replace (Pattern "{address}") (Replacement cw.connectedWalletAddress) url
-            liftEffect $ openUrl fullUrl
+            if st.allowFiatOnramp then do
+              let fullUrl = Str.replace (Pattern "{address}") (Replacement cw.connectedWalletAddress) url
+              liftEffect $ openUrl fullUrl
+            else pure unit
             H.raise FiatOnrampInitiatedEvent
       _, _ -> pure unit
   DisconnectWallet -> do
     H.modify_ _ { walletApi = Nothing, connectedWalletInfo = Nothing, walletConnection = NotConnected }
     H.raise WalletDisconnectedEvent
   Receive i -> do
-    H.modify_ _ { customButtons = i.buttons, assets = i.assets, renderMode = i.renderMode, utxosConfig = i.utxosConfig, onrampUrl = i.onrampUrl }
+    H.modify_ _ { customButtons = i.buttons, assets = i.assets, renderMode = i.renderMode, utxosConfig = i.utxosConfig, onrampUrl = i.onrampUrl, allowFiatOnramp = i.allowFiatOnramp }
   ClickCustomButton bid -> do
     H.raise (CustomButtonEvent bid)
   SelectProfile pid -> do

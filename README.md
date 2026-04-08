@@ -139,6 +139,8 @@ render state =
     , onrampUrl: Nothing
       -- To enable fiat on-ramp for extension wallets, use:
       -- , onrampUrl: Just "https://exchange.mercuryo.io/?widget_id=XXX&currency=ADA&address={address}"
+    , allowFiatOnramp: true
+      -- Set false on testnets to raise FiatOnrampInitiatedEvent without opening SDK/URL (parent can toast).
     }
 
   customButtons =
@@ -182,6 +184,7 @@ type Input =
   , renderMode :: RenderMode
   , utxosConfig :: Maybe UtxosConfig
   , onrampUrl :: Maybe String      -- On-ramp URL template with {address} placeholder
+  , allowFiatOnramp :: Boolean     -- When false, Buy ADA only raises FiatOnrampInitiatedEvent (no SDK / no new tab)
   }
 
 type ButtonConfig =

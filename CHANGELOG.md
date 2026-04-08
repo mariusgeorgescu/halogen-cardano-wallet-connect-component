@@ -19,6 +19,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - On-ramp button moved from actions area to wallet info section in both standalone and unified render modes
 - On-ramp button now displays an icon (matching the `mask mask-hexagon` pattern used by other buttons)
 
+## [2.2.1] - 2026-04-08
+
+### Added
+
+- `allowFiatOnramp :: Boolean` on `Input` — when `false`, clicking "Buy ADA" still raises `FiatOnrampInitiatedEvent` but does **not** call the UTXOS SDK on-ramp or open the extension `onrampUrl` (lets the parent show e.g. a mainnet-only toast without blocking on a hung SDK call).
+
+### Changed
+
+- **BREAKING**: Consumers must pass `allowFiatOnramp` (use `true` to preserve previous behaviour).
+
 ## [2.1.0] - 2026-04-08
 
 ### Added
