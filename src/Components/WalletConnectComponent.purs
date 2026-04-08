@@ -19,15 +19,18 @@ import Cardano.Wallet.Cip30 (Api)
 import Components.HTML.RenderUtils (renderDevider, renderLink)
 import Data.Array (null)
 import Data.Maybe (Maybe(..), fromMaybe, isJust, isNothing)
+import Data.String.Common (replace) as Str
+import Data.String.Pattern (Pattern(..), Replacement(..))
 import Data.Tuple (Tuple, fst, snd)
 import Effect.Aff.Class (class MonadAff, liftAff)
+import Effect.Class (liftEffect)
 import Halogen as H
 import Halogen.HTML as HH
 import Halogen.HTML.Events as HE
 import Halogen.HTML.Properties as HP
 import Halogen.HTML.Properties.ARIA as HPA
 import Type.Proxy (Proxy(..))
-import Utils (formatNumberFromStr, shortString)
+import Utils (formatNumberFromStr, openUrl, shortString)
 import Utxos.Sdk (UtxosConfig, UtxosWallet, utxosEnable, getCardanoApi, getUtxosUserAvatarUrl, getUtxosUserName, utxosOnramp)
 
 --------------------------------------------------------------------------------
@@ -76,9 +79,11 @@ type Input =
   , assets ::
       { connectIcon :: String
       , disconnectIcon :: String
+      , onrampIcon :: String
       }
   , renderMode :: RenderMode
   , utxosConfig :: Maybe UtxosConfig
+  , onrampUrl :: Maybe String
   }
 
 -- | Output messages raised to the parent.
@@ -121,9 +126,10 @@ type State =
   , connectedWalletInfo :: Maybe ConnectedWalletInfo
   , walletApi :: Maybe Api
   , customButtons :: Array ButtonConfig
-  , assets :: { connectIcon :: String, disconnectIcon :: String }
+  , assets :: { connectIcon :: String, disconnectIcon :: String, onrampIcon :: String }
   , renderMode :: RenderMode
   , utxosConfig :: Maybe UtxosConfig
+  , onrampUrl :: Maybe String
   , walletConnection :: WalletConnection
   }
 
@@ -172,6 +178,7 @@ initialState i =
   , assets: i.assets
   , renderMode: i.renderMode
   , utxosConfig: i.utxosConfig
+  , onrampUrl: i.onrampUrl
   , walletConnection: NotConnected
   }
 
@@ -271,16 +278,21 @@ handleAction = case _ of
         H.raise WalletConnectedEvent
   OpenFiatOnramp -> do
     st <- H.get
-    case st.walletConnection of
-      ViaUtxos utxosWallet -> do
+    case st.walletConnection, st.connectedWalletInfo of
+      ViaUtxos utxosWallet, _ -> do
         liftAff $ utxosOnramp utxosWallet
         H.raise FiatOnrampInitiatedEvent
-      _ -> pure unit
+      ViaExtension, Just cw
+        | Just url <- st.onrampUrl -> do
+            let fullUrl = Str.replace (Pattern "{address}") (Replacement cw.connectedWalletAddress) url
+            liftEffect $ openUrl fullUrl
+            H.raise FiatOnrampInitiatedEvent
+      _, _ -> pure unit
   DisconnectWallet -> do
     H.modify_ _ { walletApi = Nothing, connectedWalletInfo = Nothing, walletConnection = NotConnected }
     H.raise WalletDisconnectedEvent
   Receive i -> do
-    H.modify_ _ { customButtons = i.buttons, assets = i.assets, renderMode = i.renderMode, utxosConfig = i.utxosConfig }
+    H.modify_ _ { customButtons = i.buttons, assets = i.assets, renderMode = i.renderMode, utxosConfig = i.utxosConfig, onrampUrl = i.onrampUrl }
   ClickCustomButton bid -> do
     H.raise (CustomButtonEvent bid)
   SelectProfile pid -> do
@@ -355,20 +367,12 @@ renderStandalone s =
                   , HH.span_ [ HH.text $ (formatNumberFromStr wallet.connectedWalletNativeCoinBalance) <> " ₳" ]
                   ]
               ]
-          , renderDevider "neutral"
-          , HH.div_ (renderCustomDropdownButton <$> customButtons)
           ]
-            <> case s.walletConnection of
-              ViaUtxos _ ->
-                [ renderDevider "neutral"
-                , HH.li [ HE.onClick \_ -> OpenFiatOnramp ]
-                    [ HH.a_
-                        [ HH.text "Buy ADA" ]
-                    ]
-                ]
-              _ -> []
+            <> renderOnrampItem s
             <>
-              [ HH.li [ HE.onClick \_ -> DisconnectWallet ]
+              [ renderDevider "neutral"
+              , HH.div_ (renderCustomDropdownButton <$> customButtons)
+              , HH.li [ HE.onClick \_ -> DisconnectWallet ]
                   [ HH.a_
                       [ HH.div
                           [ HP.classes [ HH.ClassName "mask mask-hexagon  w-8" ] ]
@@ -439,6 +443,32 @@ renderStandalone s =
             ]
         ]
 
+-- | Render on-ramp item if available (ViaUtxos or ViaExtension with onrampUrl).
+renderOnrampItem :: forall m. State -> Array (H.ComponentHTML Action () m)
+renderOnrampItem s = case s.walletConnection of
+  ViaUtxos _ ->
+    [ HH.li [ HE.onClick \_ -> OpenFiatOnramp ]
+        [ HH.a_
+            [ HH.div
+                [ HP.classes [ HH.ClassName "mask mask-hexagon w-8" ] ]
+                [ HH.img [ HP.src s.assets.onrampIcon ] ]
+            , HH.text "Buy ADA"
+            ]
+        ]
+    ]
+  ViaExtension
+    | isJust s.onrampUrl ->
+        [ HH.li [ HE.onClick \_ -> OpenFiatOnramp ]
+            [ HH.a_
+                [ HH.div
+                    [ HP.classes [ HH.ClassName "mask mask-hexagon w-8" ] ]
+                    [ HH.img [ HP.src s.assets.onrampIcon ] ]
+                , HH.text "Buy ADA"
+                ]
+            ]
+        ]
+  _ -> []
+
 --------------------------------------------------------------------------------
 -- Unified Render (combined profile selector + wallet info)
 --------------------------------------------------------------------------------
@@ -483,18 +513,9 @@ renderUnifiedDropdown s cfg wallet =
         <> [ renderDevider "neutral" ]
         -- Section 2: Actions
         <> (map (renderUnifiedActionItem cfg.pendingCount) cfg.actions)
-        -- Section 2b: Buy ADA (UTXOS on-ramp)
-        <> case s.walletConnection of
-          ViaUtxos _ ->
-            [ HH.li [ HE.onClick \_ -> OpenFiatOnramp ]
-                [ HH.a [ HP.classes [ HH.ClassName "flex items-center gap-2" ] ]
-                    [ HH.text "Buy ADA" ]
-                ]
-            ]
-          _ -> []
         -- Divider
         <> [ renderDevider "neutral" ]
-        -- Section 3: Wallet info + disconnect
+        -- Section 3: Wallet info + on-ramp + disconnect
         <>
           [ HH.li_
               [ HH.div [ HP.classes [ HH.ClassName "flex items-center gap-2 px-2 py-1" ] ]
@@ -508,7 +529,10 @@ renderUnifiedDropdown s cfg wallet =
                   , HH.div_ [ HH.text $ shortString 10 wallet.connectedWalletAddress ]
                   ]
               ]
-          , HH.li [ HE.onClick \_ -> DisconnectWallet ]
+          ]
+        <> renderOnrampItem s
+        <>
+          [ HH.li [ HE.onClick \_ -> DisconnectWallet ]
               [ HH.a_
                   [ HH.div
                       [ HP.classes [ HH.ClassName "mask mask-hexagon w-8" ] ]

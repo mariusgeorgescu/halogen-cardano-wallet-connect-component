@@ -125,6 +125,7 @@ render state =
     , assets:
         { connectIcon: "/assets/wallet-icon.svg"
         , disconnectIcon: "/assets/disconnect-icon.svg"
+        , onrampIcon: "/assets/onramp-icon.svg"
         }
     , renderMode: WC.Standalone
     , utxosConfig: Nothing
@@ -135,6 +136,9 @@ render state =
       --     , walletIcon: "/assets/utxos-icon.svg"
       --     , walletLabel: "Social Login"
       --     }
+    , onrampUrl: Nothing
+      -- To enable fiat on-ramp for extension wallets, use:
+      -- , onrampUrl: Just "https://exchange.mercuryo.io/?widget_id=XXX&currency=ADA&address={address}"
     }
 
   customButtons =
@@ -172,10 +176,12 @@ type Input =
   { buttons :: Array ButtonConfig
   , assets :: 
       { connectIcon :: String
-      , disconnectIcon :: String  
+      , disconnectIcon :: String
+      , onrampIcon :: String       -- Icon URL for Buy ADA button
       }
   , renderMode :: RenderMode
   , utxosConfig :: Maybe UtxosConfig
+  , onrampUrl :: Maybe String      -- On-ramp URL template with {address} placeholder
   }
 
 type ButtonConfig =
@@ -204,7 +210,7 @@ data Output
   | ProfileSelectedEvent String   -- Profile ID
   | ActionItemEvent String        -- Action Item ID
   | CreateProfileEvent
-  | FiatOnrampInitiatedEvent      -- Fiat on-ramp opened (UTXOS/Mercuryo)
+  | FiatOnrampInitiatedEvent      -- Fiat on-ramp opened (UTXOS SDK or direct URL)
 ```
 
 ### Component Queries
@@ -327,7 +333,11 @@ The component automatically adjusts button colors based on connection state (pri
 1. A "Social Login" option appears below browser extension wallets in the dropdown
 2. User clicks Social Login -- UTXOS SDK opens authentication popup (Google, Discord, Apple, X)
 3. After authentication, wallet info is fetched via CIP-30 compatible API
-4. A "Buy ADA" button appears in the dropdown when connected via UTXOS (fiat on-ramp)
+
+**Fiat On-Ramp (Buy ADA):**
+- When connected via UTXOS, the "Buy ADA" button always appears in the wallet info section and uses the UTXOS SDK on-ramp (Mercuryo)
+- When connected via a browser extension wallet and `onrampUrl` is provided, the "Buy ADA" button appears and opens the URL in a new tab with `{address}` replaced by the wallet's bech32 address
+- Both paths raise `FiatOnrampInitiatedEvent` so the parent can react
 
 ### State Management
 - The component maintains its own internal state for wallet connection
@@ -388,6 +398,11 @@ MIT License - see [LICENSE](./LICENSE) file for details.
 ## Changelog
 
 See [CHANGELOG.md](./CHANGELOG.md) for detailed version history.
+
+### v2.2.0
+- **BREAKING**: Added `onrampIcon :: String` to `assets` and `onrampUrl :: Maybe String` to `Input`
+- On-ramp ("Buy ADA") now available for extension-connected wallets via configurable URL
+- On-ramp button moved to wallet info section with icon
 
 ### v2.0.0
 - **BREAKING**: Added `utxosConfig :: Maybe UtxosConfig` to `Input` (pass `Nothing` to preserve existing behavior)

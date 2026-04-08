@@ -6,6 +6,13 @@ import Data.Formatter.Number (formatOrShowNumber)
 import Data.Maybe (maybe)
 import Data.Number as Number
 import Data.String (drop, length, take)
+import Effect (Effect)
+
+foreign import _openUrl :: String -> Effect Unit
+
+-- | Open a URL in a new browser tab.
+openUrl :: String -> Effect Unit
+openUrl = _openUrl
 
 -- | Truncate string to first and last n chars with "..." in the middle.
 shortString :: Int -> String -> String
