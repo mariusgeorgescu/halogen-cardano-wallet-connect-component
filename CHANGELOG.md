@@ -5,29 +5,26 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [2.2.0] - 2026-04-08
-
-### Added
-- On-ramp ("Buy ADA") now available for extension-connected wallets via configurable URL with `{address}` placeholder
-- `onrampIcon :: String` field on `assets` in `Input` — icon for the on-ramp button (consistent with `connectIcon`/`disconnectIcon`)
-- `onrampUrl :: Maybe String` field on `Input` — on-ramp URL template for extension wallets (e.g. `"https://exchange.mercuryo.io/?widget_id=XXX&currency=ADA&address={address}"`)
-- `Utils.js` FFI with `openUrl` for opening URLs in a new browser tab
-
-### Changed
-- **BREAKING**: `onrampIcon :: String` added to `assets` record in `Input`
-- **BREAKING**: `onrampUrl :: Maybe String` added to `Input` (pass `Nothing` to preserve existing behavior)
-- On-ramp button moved from actions area to wallet info section in both standalone and unified render modes
-- On-ramp button now displays an icon (matching the `mask mask-hexagon` pattern used by other buttons)
-
-## [2.2.1] - 2026-04-08
+## [3.0.0] - 2026-04-20
 
 ### Added
 
-- `allowFiatOnramp :: Boolean` on `Input` — when `false`, clicking "Buy ADA" still raises `FiatOnrampInitiatedEvent` but does **not** call the UTXOS SDK on-ramp or open the extension `onrampUrl` (lets the parent show e.g. a mainnet-only toast without blocking on a hung SDK call).
+- `FiatOnrampBehavior` ADT on `Input` (`fiatOnramp :: FiatOnrampBehavior`) with three modes:
+  - `FiatOnrampDefault (Maybe String)` — per-connection default (extension opens the URL with `{address}` substitution; UTXOS calls the Mercuryo SDK; `Nothing` hides the extension item).
+  - `FiatOnrampOpenUrl String` — always open this URL, skip the UTXOS SDK (for testnet faucets etc.).
+  - `FiatOnrampEventOnly` — raise `FiatOnrampInitiatedEvent` only; parent handles UI.
+- Address copy button in the connected-wallet dropdown (standalone and unified render modes). Clicking raises the new `CopyAddressEvent String` output; the parent performs the clipboard write using its own capability.
+- `copyIcon :: String` field on `assets` in `Input`.
 
 ### Changed
 
-- **BREAKING**: Consumers must pass `allowFiatOnramp` (use `true` to preserve previous behaviour).
+- **BREAKING**: `Input.onrampUrl :: Maybe String` and `Input.allowFiatOnramp :: Boolean` are removed. Migrate as follows:
+  - `onrampUrl = Just url`, `allowFiatOnramp = true`  →  `fiatOnramp = FiatOnrampDefault (Just url)`
+  - `onrampUrl = Nothing`, `allowFiatOnramp = true`   →  `fiatOnramp = FiatOnrampDefault Nothing`
+  - `allowFiatOnramp = false` (any `onrampUrl`)       →  `fiatOnramp = FiatOnrampEventOnly`
+  - Always open a fixed URL (e.g. testnet faucet)     →  `fiatOnramp = FiatOnrampOpenUrl url`
+- **BREAKING**: `Output` gains `CopyAddressEvent String`. Exhaustive parent handlers must add a branch.
+- **BREAKING**: `assets` record gains `copyIcon :: String`. Provide an icon URL.
 
 ## [2.1.0] - 2026-04-08
 

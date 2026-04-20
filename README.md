@@ -126,6 +126,7 @@ render state =
         { connectIcon: "/assets/wallet-icon.svg"
         , disconnectIcon: "/assets/disconnect-icon.svg"
         , onrampIcon: "/assets/onramp-icon.svg"
+        , copyIcon: "/assets/copy-icon.svg"
         }
     , renderMode: WC.Standalone
     , utxosConfig: Nothing
@@ -136,11 +137,14 @@ render state =
       --     , walletIcon: "/assets/utxos-icon.svg"
       --     , walletLabel: "Social Login"
       --     }
-    , onrampUrl: Nothing
-      -- To enable fiat on-ramp for extension wallets, use:
-      -- , onrampUrl: Just "https://exchange.mercuryo.io/?widget_id=XXX&currency=ADA&address={address}"
-    , allowFiatOnramp: true
-      -- Set false on testnets to raise FiatOnrampInitiatedEvent without opening SDK/URL (parent can toast).
+    , fiatOnramp: WC.FiatOnrampDefault Nothing
+      -- Other modes:
+      --   WC.FiatOnrampDefault (Just "https://buy.moonpay.com/?apiKey=...&walletAddress={address}")
+      --     — extension opens the URL with {address} substitution; UTXOS calls the SDK.
+      --   WC.FiatOnrampOpenUrl "https://docs.cardano.org/cardano-testnets/tools/faucet"
+      --     — always open this URL; skip the UTXOS SDK (e.g. testnet faucet).
+      --   WC.FiatOnrampEventOnly
+      --     — raise FiatOnrampInitiatedEvent only; parent handles UI (e.g. toast).
     }
 
   customButtons =
@@ -164,7 +168,10 @@ handleAction = case _ of
         "settings" -> openSettings
         _ -> pure unit
     WC.FiatOnrampInitiatedEvent -> do
-      -- Handle fiat on-ramp opened (UTXOS/Mercuryo)
+      -- Handle fiat on-ramp opened (UTXOS/Mercuryo, configured URL, or testnet faucet)
+      pure unit
+    WC.CopyAddressEvent addr -> do
+      -- Perform the clipboard write using your clipboard capability / FFI
       pure unit
     _ -> pure unit
 ```
@@ -174,18 +181,24 @@ handleAction = case _ of
 ### Component Input
 
 ```purescript
-type Input = 
+type Input =
   { buttons :: Array ButtonConfig
-  , assets :: 
+  , assets ::
       { connectIcon :: String
       , disconnectIcon :: String
       , onrampIcon :: String       -- Icon URL for Buy ADA button
+      , copyIcon :: String         -- Icon URL for the copy-address button
       }
   , renderMode :: RenderMode
   , utxosConfig :: Maybe UtxosConfig
-  , onrampUrl :: Maybe String      -- On-ramp URL template with {address} placeholder
-  , allowFiatOnramp :: Boolean     -- When false, Buy ADA only raises FiatOnrampInitiatedEvent (no SDK / no new tab)
+  , fiatOnramp :: FiatOnrampBehavior
   }
+
+-- | Fiat on-ramp intent. Replaces the earlier onrampUrl / allowFiatOnramp pair.
+data FiatOnrampBehavior
+  = FiatOnrampDefault (Maybe String)  -- extension: open URL ({address} substitution); UTXOS: Mercuryo SDK; Nothing hides extension item
+  | FiatOnrampOpenUrl String          -- always open this URL, skip SDK (e.g. testnet faucet)
+  | FiatOnrampEventOnly               -- raise event only; parent handles UI
 
 type ButtonConfig =
   { id :: String           -- Unique identifier
@@ -208,12 +221,13 @@ type UtxosConfig =
 ```purescript
 data Output
   = WalletConnectedEvent
-  | WalletDisconnectedEvent  
+  | WalletDisconnectedEvent
   | CustomButtonEvent String      -- Button ID
   | ProfileSelectedEvent String   -- Profile ID
   | ActionItemEvent String        -- Action Item ID
   | CreateProfileEvent
   | FiatOnrampInitiatedEvent      -- Fiat on-ramp opened (UTXOS SDK or direct URL)
+  | CopyAddressEvent String       -- User clicked copy-address; payload is the bech32 address
 ```
 
 ### Component Queries
@@ -338,9 +352,16 @@ The component automatically adjusts button colors based on connection state (pri
 3. After authentication, wallet info is fetched via CIP-30 compatible API
 
 **Fiat On-Ramp (Buy ADA):**
-- When connected via UTXOS, the "Buy ADA" button always appears in the wallet info section and uses the UTXOS SDK on-ramp (Mercuryo)
-- When connected via a browser extension wallet and `onrampUrl` is provided, the "Buy ADA" button appears and opens the URL in a new tab with `{address}` replaced by the wallet's bech32 address
-- Both paths raise `FiatOnrampInitiatedEvent` so the parent can react
+- Visibility and behavior are driven by `fiatOnramp :: FiatOnrampBehavior`:
+  - `FiatOnrampDefault (Just url)` — extension opens `url` (with `{address}` substitution); UTXOS uses the Mercuryo SDK.
+  - `FiatOnrampDefault Nothing` — extension item hidden; UTXOS uses the Mercuryo SDK.
+  - `FiatOnrampOpenUrl url` — always open `url` in a new tab, skip the SDK (useful for testnet faucets).
+  - `FiatOnrampEventOnly` — raise `FiatOnrampInitiatedEvent` only; parent handles UI.
+- All paths raise `FiatOnrampInitiatedEvent` so the parent can react (toast, analytics, etc.).
+
+**Copy address:**
+- Connected-wallet dropdowns (standalone and unified) include a copy-address button.
+- Clicking raises `CopyAddressEvent String` with the bech32 address; the parent performs the clipboard write using its own capability.
 
 ### State Management
 - The component maintains its own internal state for wallet connection

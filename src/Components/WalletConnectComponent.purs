@@ -73,6 +73,21 @@ type UnifiedConfig =
   , createProfileLabel :: String
   }
 
+-- | Fiat on-ramp behavior selector. Replaces the earlier `onrampUrl`/`allowFiatOnramp`
+-- | pair. The consumer picks one mode that captures the full intent.
+data FiatOnrampBehavior
+  -- | Default per-connection behavior:
+  -- |   - ViaExtension with `Just url`: opens the URL in a new tab (with `{address}` substitution).
+  -- |   - ViaExtension with `Nothing`: on-ramp item hidden.
+  -- |   - ViaUtxos: calls the UTXOS SDK (Mercuryo) on-ramp.
+  = FiatOnrampDefault (Maybe String)
+  -- | Always open this URL in a new tab regardless of connection type; skips the UTXOS SDK.
+  -- | Performs `{address}` substitution for symmetry with `FiatOnrampDefault`.
+  | FiatOnrampOpenUrl String
+  -- | Raise `FiatOnrampInitiatedEvent` only; the parent handles UI (e.g. a toast).
+  -- | The on-ramp item stays visible so the parent can explain why nothing happened.
+  | FiatOnrampEventOnly
+
 -- | Input: custom buttons, asset URLs, render mode, and optional UTXOS config.
 type Input =
   { buttons :: Array ButtonConfig
@@ -80,12 +95,11 @@ type Input =
       { connectIcon :: String
       , disconnectIcon :: String
       , onrampIcon :: String
+      , copyIcon :: String
       }
   , renderMode :: RenderMode
   , utxosConfig :: Maybe UtxosConfig
-  , onrampUrl :: Maybe String
-  -- | When false, Buy ADA still raises `FiatOnrampInitiatedEvent` but does not open the UTXOS SDK or extension URL (parent can toast, e.g. mainnet-only).
-  , allowFiatOnramp :: Boolean
+  , fiatOnramp :: FiatOnrampBehavior
   }
 
 -- | Output messages raised to the parent.
@@ -97,6 +111,10 @@ data Output
   | ActionItemEvent String
   | CreateProfileEvent
   | FiatOnrampInitiatedEvent
+  -- | Raised when the user clicks the copy-address button. Payload is the
+  -- | full bech32 address. The parent performs the clipboard write so it
+  -- | can use its own clipboard capability and feedback UI.
+  | CopyAddressEvent String
 
 -- | Public queries to update/query walletApi and state.
 data Query a
@@ -128,11 +146,10 @@ type State =
   , connectedWalletInfo :: Maybe ConnectedWalletInfo
   , walletApi :: Maybe Api
   , customButtons :: Array ButtonConfig
-  , assets :: { connectIcon :: String, disconnectIcon :: String, onrampIcon :: String }
+  , assets :: { connectIcon :: String, disconnectIcon :: String, onrampIcon :: String, copyIcon :: String }
   , renderMode :: RenderMode
   , utxosConfig :: Maybe UtxosConfig
-  , onrampUrl :: Maybe String
-  , allowFiatOnramp :: Boolean
+  , fiatOnramp :: FiatOnrampBehavior
   , walletConnection :: WalletConnection
   }
 
@@ -141,6 +158,7 @@ data Action
   = ConnectWallet String
   | ConnectUtxosWallet
   | OpenFiatOnramp
+  | CopyAddress String
   | DisconnectWallet
   | Receive Input
   | ClickCustomButton String
@@ -181,8 +199,7 @@ initialState i =
   , assets: i.assets
   , renderMode: i.renderMode
   , utxosConfig: i.utxosConfig
-  , onrampUrl: i.onrampUrl
-  , allowFiatOnramp: i.allowFiatOnramp
+  , fiatOnramp: i.fiatOnramp
   , walletConnection: NotConnected
   }
 
@@ -282,24 +299,30 @@ handleAction = case _ of
         H.raise WalletConnectedEvent
   OpenFiatOnramp -> do
     st <- H.get
-    case st.walletConnection, st.connectedWalletInfo of
-      ViaUtxos utxosWallet, _ -> do
-        if st.allowFiatOnramp then liftAff $ utxosOnramp utxosWallet
-        else pure unit
+    let
+      substAddr url = case st.connectedWalletInfo of
+        Just cw -> Str.replace (Pattern "{address}") (Replacement cw.connectedWalletAddress) url
+        Nothing -> url
+    case st.fiatOnramp, st.walletConnection of
+      FiatOnrampEventOnly, _ ->
         H.raise FiatOnrampInitiatedEvent
-      ViaExtension, Just cw
-        | Just url <- st.onrampUrl -> do
-            if st.allowFiatOnramp then do
-              let fullUrl = Str.replace (Pattern "{address}") (Replacement cw.connectedWalletAddress) url
-              liftEffect $ openUrl fullUrl
-            else pure unit
-            H.raise FiatOnrampInitiatedEvent
+      FiatOnrampOpenUrl url, _ -> do
+        liftEffect $ openUrl (substAddr url)
+        H.raise FiatOnrampInitiatedEvent
+      FiatOnrampDefault _, ViaUtxos utxosWallet -> do
+        liftAff $ utxosOnramp utxosWallet
+        H.raise FiatOnrampInitiatedEvent
+      FiatOnrampDefault (Just url), ViaExtension -> do
+        liftEffect $ openUrl (substAddr url)
+        H.raise FiatOnrampInitiatedEvent
       _, _ -> pure unit
+  CopyAddress addr ->
+    H.raise (CopyAddressEvent addr)
   DisconnectWallet -> do
     H.modify_ _ { walletApi = Nothing, connectedWalletInfo = Nothing, walletConnection = NotConnected }
     H.raise WalletDisconnectedEvent
   Receive i -> do
-    H.modify_ _ { customButtons = i.buttons, assets = i.assets, renderMode = i.renderMode, utxosConfig = i.utxosConfig, onrampUrl = i.onrampUrl, allowFiatOnramp = i.allowFiatOnramp }
+    H.modify_ _ { customButtons = i.buttons, assets = i.assets, renderMode = i.renderMode, utxosConfig = i.utxosConfig, fiatOnramp = i.fiatOnramp }
   ClickCustomButton bid -> do
     H.raise (CustomButtonEvent bid)
   SelectProfile pid -> do
@@ -374,6 +397,7 @@ renderStandalone s =
                   , HH.span_ [ HH.text $ (formatNumberFromStr wallet.connectedWalletNativeCoinBalance) <> " ₳" ]
                   ]
               ]
+          , renderCopyAddressItem { copyIcon: s.assets.copyIcon, address: wallet.connectedWalletAddress }
           ]
             <> renderOnrampItem s
             <>
@@ -450,10 +474,10 @@ renderStandalone s =
             ]
         ]
 
--- | Render on-ramp item if available (ViaUtxos or ViaExtension with onrampUrl).
+-- | Render on-ramp item if enabled for the current connection and mode.
 renderOnrampItem :: forall m. State -> Array (H.ComponentHTML Action () m)
-renderOnrampItem s = case s.walletConnection of
-  ViaUtxos _ ->
+renderOnrampItem s =
+  if onrampVisible s.fiatOnramp s.walletConnection then
     [ HH.li [ HE.onClick \_ -> OpenFiatOnramp ]
         [ HH.a_
             [ HH.div
@@ -463,18 +487,40 @@ renderOnrampItem s = case s.walletConnection of
             ]
         ]
     ]
-  ViaExtension
-    | isJust s.onrampUrl ->
-        [ HH.li [ HE.onClick \_ -> OpenFiatOnramp ]
-            [ HH.a_
-                [ HH.div
-                    [ HP.classes [ HH.ClassName "mask mask-hexagon w-8" ] ]
-                    [ HH.img [ HP.src s.assets.onrampIcon ] ]
-                , HH.text "Buy ADA"
-                ]
+  else []
+  where
+  onrampVisible behavior conn = case behavior, conn of
+    FiatOnrampDefault Nothing, ViaExtension -> false
+    FiatOnrampDefault _, NotConnected -> false
+    FiatOnrampOpenUrl _, NotConnected -> false
+    FiatOnrampEventOnly, NotConnected -> false
+    _, _ -> true
+
+-- | Render a "Copy address" list item. Raises CopyAddressEvent; the parent
+-- | performs the clipboard write using its own clipboard capability.
+-- | The `copy-feedback-btn`/`copy-label`/`copy-confirm` class names let a
+-- | consumer style a CSS-only "Copied!" flash on focus if desired (optional).
+renderCopyAddressItem
+  :: forall m
+   . { copyIcon :: String, address :: String }
+  -> H.ComponentHTML Action () m
+renderCopyAddressItem { copyIcon, address } =
+  HH.li_
+    [ HH.button
+        [ HP.classes [ HH.ClassName "btn btn-ghost btn-sm justify-start gap-2 w-full copy-feedback-btn" ]
+        , HP.type_ HP.ButtonButton
+        , HP.attr (HH.AttrName "aria-label") "Copy address to clipboard"
+        , HE.onClick \_ -> CopyAddress address
+        ]
+        [ HH.div
+            [ HP.classes [ HH.ClassName "mask mask-hexagon w-8" ] ]
+            [ HH.img [ HP.src copyIcon ] ]
+        , HH.span [ HP.classes [ HH.ClassName "grid" ] ]
+            [ HH.span [ HP.classes [ HH.ClassName "copy-label" ] ] [ HH.text "Copy address" ]
+            , HH.span [ HP.classes [ HH.ClassName "copy-confirm" ] ] [ HH.text "Copied!" ]
             ]
         ]
-  _ -> []
+    ]
 
 --------------------------------------------------------------------------------
 -- Unified Render (combined profile selector + wallet info)
@@ -536,6 +582,7 @@ renderUnifiedDropdown s cfg wallet =
                   , HH.div_ [ HH.text $ shortString 10 wallet.connectedWalletAddress ]
                   ]
               ]
+          , renderCopyAddressItem { copyIcon: s.assets.copyIcon, address: wallet.connectedWalletAddress }
           ]
         <> renderOnrampItem s
         <>
