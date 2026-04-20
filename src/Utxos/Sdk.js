@@ -31,10 +31,10 @@ export const _getCardanoApi = wallet => {
   // tx) and parse it with CSL to extract the witness set.
   const originalSignTx = api.signTx.bind(api);
   api.signTx = async (tx, _partialSign) => {
-    // Per https://docs.utxos.dev/wallet/developer-controlled/usage/cardano#sign-a-transaction
-    // `signTx(unsignedTx, true)` is the documented partial-sign call; returns a
-    // full signed tx. Parse with CSL to return the witness set CIP-30 callers expect.
-    const fullSignedTxHex = await originalSignTx(tx, true);
+    // Per https://docs.utxos.dev/wallet/usage/cardano the documented consumer
+    // API is `cardano.signTx(unsignedTx)` (single arg). Returns a full signed
+    // tx. Parse with CSL to return the witness set CIP-30 callers expect.
+    const fullSignedTxHex = await originalSignTx(tx);
     const csl = await import("@emurgo/cardano-serialization-lib-browser");
     const decoded = csl.Transaction.from_hex(fullSignedTxHex);
     try {
