@@ -22,7 +22,15 @@ export const _utxosEnable = projectId => networkId => fetcher => submitter => ()
     return wallet;
   });
 
-export const _getCardanoApi = wallet => wallet.cardano;
+export const _getCardanoApi = wallet => {
+  const api = wallet.cardano;
+  // @utxos/sdk overrides signTx to default `returnFullTx=true`, breaking CIP-30
+  // semantics (which expect a witness set, not a full signed tx). Force false so
+  // the popup returns a witness set. Extra args are ignored by standard CIP-30 wallets.
+  const originalSignTx = api.signTx.bind(api);
+  api.signTx = (tx, partialSign) => originalSignTx(tx, partialSign, false);
+  return api;
+};
 
 export const _utxosOnramp = wallet => opts => () =>
   Promise.resolve(wallet.onramp(opts));
