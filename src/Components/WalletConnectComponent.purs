@@ -7,7 +7,6 @@ module Components.WalletConnectComponent where
 import Prelude
 import Cardano.Capabilities.Wallet.MonadCIP30
   ( class MonadCIP30
-  , enableWallet
   , getName
   , getIcon
   , getNetworkName
@@ -16,13 +15,17 @@ import Cardano.Capabilities.Wallet.MonadCIP30
   , getTheAvailableWallets
   )
 import Cardano.Wallet.Cip30 (Api)
+import Cardano.Wallet.Cip30 as Cip30
 import Components.HTML.RenderUtils (renderDevider, renderLink)
 import Data.Array (null)
 import Data.Maybe (Maybe(..), fromMaybe, isJust, isNothing)
 import Data.String.Common (replace) as Str
 import Data.String.Pattern (Pattern(..), Replacement(..))
 import Data.Tuple (Tuple, fst, snd)
+import Data.Either (Either(..))
+import Effect.Aff (attempt)
 import Effect.Aff.Class (class MonadAff, liftAff)
+import Effect.Exception (message)
 import Effect.Class (liftEffect)
 import Halogen as H
 import Halogen.HTML as HH
@@ -111,6 +114,13 @@ data Output
   | ActionItemEvent String
   | CreateProfileEvent
   | FiatOnrampInitiatedEvent
+  -- | Raised when `enable` failed — most often because the user dismissed the
+  -- | wallet's prompt. Payload is whatever detail could be read from the error.
+  -- |
+  -- | Without this the component simply died inside `ConnectWallet`: the enable
+  -- | threw, nothing was raised, and the host had no way to learn that a click
+  -- | had happened at all. A declined prompt looked exactly like a dead button.
+  | WalletConnectFailedEvent String
   -- | Raised when the user clicks the copy-address button. Payload is the
   -- | full bech32 address. The parent performs the clipboard write so it
   -- | can use its own clipboard capability and feedback UI.
@@ -121,6 +131,11 @@ data Query a
   = SetWalletApi (Maybe Api) a
   | GetWalletApi (Maybe Api -> a)
   | GetConnectedWalletInfo (Maybe ConnectedWalletInfo -> a)
+  -- | The CIP-30 key the current connection was made with — `lace`, `eternl` —
+  -- | not the display name. A host that has to call `enable` again (to
+  -- | negotiate extensions, say) needs the key, and `ConnectedWalletInfo`
+  -- | carries only what `getName` returned.
+  | GetConnectedWalletKey (Maybe String -> a)
   | GetAvailableWalletExtensions (Array (Tuple String String) -> a)
   | DisconnectWalletQuery a
   | RefreshWalletInfoQuery a
@@ -144,6 +159,7 @@ data WalletConnection
 type State =
   { availableWalletExtensions :: Array (Tuple String String)
   , connectedWalletInfo :: Maybe ConnectedWalletInfo
+  , connectedWalletKey :: Maybe String
   , walletApi :: Maybe Api
   , customButtons :: Array ButtonConfig
   , assets :: { connectIcon :: String, disconnectIcon :: String, onrampIcon :: String, copyIcon :: String }
@@ -194,6 +210,7 @@ initialState :: Input -> State
 initialState i =
   { availableWalletExtensions: []
   , connectedWalletInfo: Nothing
+  , connectedWalletKey: Nothing
   , walletApi: Nothing
   , customButtons: i.buttons
   , assets: i.assets
@@ -221,6 +238,9 @@ handleQuery = case _ of
   GetConnectedWalletInfo k -> do
     wi <- H.gets _.connectedWalletInfo
     pure $ Just (k wi)
+  GetConnectedWalletKey k -> do
+    key <- H.gets _.connectedWalletKey
+    pure $ Just (k key)
   GetAvailableWalletExtensions k -> do
     ws <- H.gets _.availableWalletExtensions
     pure $ Just (k ws)
@@ -244,6 +264,35 @@ handleQuery = case _ of
         pure (Just next)
       _, _ -> pure (Just next)
 
+-- | Record a live extension connection: read what the panel shows, keep the key it
+-- | was made with, and tell the host.
+connected
+  :: forall m
+   . MonadAff m
+  => MonadCIP30 m
+  => String
+  -> Api
+  -> H.HalogenM State Action () Output m Unit
+connected wname api = do
+  network <- getNetworkName api
+  name <- getName wname
+  icon <- getIcon wname
+  adaBalance <- getNativeCoinBalanceString api
+  firstAddrBech32 <- getUserFirstAddressBech32 api
+  H.modify_ _
+    { walletApi = Just api
+    , connectedWalletKey = Just wname
+    , connectedWalletInfo = Just
+        { connectedWalletName: name
+        , connectedWalletNetwork: network
+        , connectedWalletAddress: firstAddrBech32
+        , connectedWalletNativeCoinBalance: adaBalance
+        , connectedWalletIcon: icon
+        }
+    , walletConnection = ViaExtension
+    }
+  H.raise WalletConnectedEvent
+
 -- | Handle internal actions.
 handleAction
   :: forall m
@@ -253,23 +302,14 @@ handleAction
   -> H.HalogenM State Action () Output m Unit
 handleAction = case _ of
   ConnectWallet wname -> do
-    api <- enableWallet wname
-    network <- getNetworkName api
-    name <- getName wname
-    icon <- getIcon wname
-    adaBalance <- getNativeCoinBalanceString api
-    firstAddrBech32 <- getUserFirstAddressBech32 api
-    let
-      cw =
-        Just
-          { connectedWalletName: name
-          , connectedWalletNetwork: network
-          , connectedWalletAddress: firstAddrBech32
-          , connectedWalletNativeCoinBalance: adaBalance
-          , connectedWalletIcon: icon
-          }
-    H.modify_ _ { walletApi = Just api, connectedWalletInfo = cw, walletConnection = ViaExtension }
-    H.raise WalletConnectedEvent
+    -- `enable` is the one call here that routinely fails, because dismissing the
+    -- wallet's prompt is a normal thing for a person to do. Unguarded, it threw
+    -- and took the rest of this handler with it, so the component stayed in its
+    -- disconnected state and said nothing.
+    attempted <- liftAff (attempt (Cip30.enable wname [ { cip: 30 } ]))
+    case attempted of
+      Left err -> H.raise (WalletConnectFailedEvent (message err))
+      Right api -> connected wname api
   ConnectUtxosWallet -> do
     st <- H.get
     case st.utxosConfig of
@@ -294,6 +334,9 @@ handleAction = case _ of
         H.modify_ _
           { walletApi = Just api
           , connectedWalletInfo = cw
+          -- A UTXOS connection has no CIP-30 key, and a stale one from an earlier
+          -- extension connection would be worse than none.
+          , connectedWalletKey = Nothing
           , walletConnection = ViaUtxos utxosWallet
           }
         H.raise WalletConnectedEvent
@@ -319,7 +362,7 @@ handleAction = case _ of
   CopyAddress addr ->
     H.raise (CopyAddressEvent addr)
   DisconnectWallet -> do
-    H.modify_ _ { walletApi = Nothing, connectedWalletInfo = Nothing, walletConnection = NotConnected }
+    H.modify_ _ { walletApi = Nothing, connectedWalletInfo = Nothing, connectedWalletKey = Nothing, walletConnection = NotConnected }
     H.raise WalletDisconnectedEvent
   Receive i -> do
     H.modify_ _ { customButtons = i.buttons, assets = i.assets, renderMode = i.renderMode, utxosConfig = i.utxosConfig, fiatOnramp = i.fiatOnramp }
